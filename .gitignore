@@ -1,0 +1,7 @@
+*
+
+!.gitignore
+
+!models/cnn/scripts/**
+
+!models/logisticregression/scripts/**
