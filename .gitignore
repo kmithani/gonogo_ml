@@ -1,7 +1,15 @@
+# Ignore all files
 *
 
+# Do not ignore the .gitignore file itself
 !.gitignore
 
-!models/cnn/scripts/
+# Do not ignore directories, their content will be controlled later
+!*/
 
+# Allow the specific folders and their contents
+!models/
+!models/cnn/
+!models/cnn/scripts/
+!models/logisticregression/
 !models/logisticregression/scripts/
