@@ -657,35 +657,36 @@ for idx, subj in enumerate(subjects):
     
     #%%
     # Plot the features to help contextualize the results
-    tmp = X_train.squeeze()
-    n_channels = tmp.shape[1]
-    n_cols = 5
-    n_rows = ceil(n_channels/n_cols)
+    if not use_pca:
+        tmp = X_train.squeeze()
+        n_channels = tmp.shape[1]
+        n_cols = 5
+        n_rows = ceil(n_channels/n_cols)
 
-    fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
-    axes = axes.flatten()
-    for ch in range(tmp.shape[1]):
-        plotting_df = pd.DataFrame(tmp[:,ch,:])
-        plotting_df['outcome']=y_train
-        plotting_df = plotting_df.melt(id_vars='outcome')
-        sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
-    plt.savefig(os.path.join(subj_outdir, f'{subj}_training_psds.png'))
-    plt.close()
-    
-    tmp = X_val.squeeze()
-    n_channels = tmp.shape[1]
-    n_cols = 5
-    n_rows = ceil(n_channels/n_cols)
+        fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
+        axes = axes.flatten()
+        for ch in range(tmp.shape[1]):
+            plotting_df = pd.DataFrame(tmp[:,ch,:])
+            plotting_df['outcome']=y_train
+            plotting_df = plotting_df.melt(id_vars='outcome')
+            sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
+        plt.savefig(os.path.join(subj_outdir, f'{subj}_training_psds.png'))
+        plt.close()
+        
+        tmp = X_val.squeeze()
+        n_channels = tmp.shape[1]
+        n_cols = 5
+        n_rows = ceil(n_channels/n_cols)
 
-    fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
-    axes = axes.flatten()
-    for ch in range(tmp.shape[1]):
-        plotting_df = pd.DataFrame(tmp[:,ch,:])
-        plotting_df['outcome']=y_val
-        plotting_df = plotting_df.melt(id_vars='outcome')
-        sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
-    plt.savefig(os.path.join(subj_outdir, f'{subj}_validation_psds.png'))
-    plt.close()
+        fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
+        axes = axes.flatten()
+        for ch in range(tmp.shape[1]):
+            plotting_df = pd.DataFrame(tmp[:,ch,:])
+            plotting_df['outcome']=y_val
+            plotting_df = plotting_df.melt(id_vars='outcome')
+            sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
+        plt.savefig(os.path.join(subj_outdir, f'{subj}_validation_psds.png'))
+        plt.close()
     
     #%% Evaluate the model
     X_test = X_test.reshape(X_test.shape[0], -1)
