@@ -1,5 +1,6 @@
 # Ignore all files
 *
+/d/gmi/1/karimmithani/seeg/analysis/gonogo/scripts/
 
 # Do not ignore the .gitignore file itself
 !.gitignore
