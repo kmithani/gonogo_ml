@@ -10,6 +10,4 @@
 # Allow the specific folders and their contents
 !models/
 !models/cnn/
-!models/cnn/scripts/
 !models/logisticregression/
-!models/logisticregression/scripts/
