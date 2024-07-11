@@ -1,9 +1,9 @@
 ##############################################################################################################
 # Logistic regression to predict lapses in response inhibition on the Go/Nogo task using PSD estimates
-#d
+#
 #
 # Karim Mithani
-# June 2024d
+# June 2024
 ##############################################################################################################
 
 import argparse
