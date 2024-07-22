@@ -697,7 +697,8 @@ for idx, subj in enumerate(subjects):
     X_test = X_test.reshape(X_test.shape[0], -1)
     X_val = X_val.reshape(X_val.shape[0], -1)
     
-    y_pred_probs = model.predict(X_test)
+    # y_pred_probs = model.predict(X_test)
+    y_pred_probs = model.predict_proba(X_test)[:,1]
     predictions_df = pd.DataFrame(y_pred_probs)
     predictions_df['truth'] = y_test
     predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
@@ -769,7 +770,8 @@ for idx, subj in enumerate(subjects):
         
         # X_val, y_val = psds_normalized_validation, events
         
-        y_pred_probs_val = model.predict(X_val)
+        # y_pred_probs_val = model.predict(X_val)
+        y_pred_probs_val = model.predict_proba(X_val)[:,1]
         predictions_val_df = pd.DataFrame(y_pred_probs_val)
         predictions_val_df['truth'] = y_val
         predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))

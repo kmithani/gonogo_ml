@@ -15,8 +15,8 @@ parser.add_argument('--online', action='store_true', help='Whether or not to use
 parser.add_argument('--fmax', type=int, help='The maximum frequency to use for the PSD estimates', nargs='?')
 args = parser.parse_args()
 
-#%%
-# For debugging, assign the arguments manually
+# #%%
+# # For debugging, assign the arguments manually
 # class Args:
 #     def __init__(self):
 #         self.use_rfe = False
@@ -688,36 +688,52 @@ for idx, subj in enumerate(subjects):
         n_cols = 5
         n_rows = ceil(n_channels/n_cols)
 
+        # fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
+        # axes = axes.flatten()
+        # for ch in range(tmp.shape[1]):
+        #     plotting_df = pd.DataFrame(tmp[:,ch,:])
+        #     plotting_df['outcome']=y_train
+        #     plotting_df = plotting_df.melt(id_vars='outcome')
+        #     sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
+        # plt.savefig(os.path.join(subj_outdir, f'{subj}_training_psds.png'))
+        # plt.close()
+        
+        # tmp = X_val.squeeze()
+        # n_channels = tmp.shape[1]
+        # n_cols = 5
+        # n_rows = ceil(n_channels/n_cols)
+
+        # fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
+        # axes = axes.flatten()
+        # for ch in range(tmp.shape[1]):
+        #     plotting_df = pd.DataFrame(tmp[:,ch,:])
+        #     plotting_df['outcome']=y_val
+        #     plotting_df = plotting_df.melt(id_vars='outcome')
+        #     sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
+        # plt.savefig(os.path.join(subj_outdir, f'{subj}_validation_psds.png'))
+        # plt.close()
+        
         fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
         axes = axes.flatten()
         for ch in range(tmp.shape[1]):
-            plotting_df = pd.DataFrame(tmp[:,ch,:])
-            plotting_df['outcome']=y_train
-            plotting_df = plotting_df.melt(id_vars='outcome')
-            sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_training_psds.png'))
+            plotting_df_train = pd.DataFrame(X_train.squeeze()[:,ch,:])
+            plotting_df_train['outcome']=y_train
+            plotting_df_train['group']='train'
+            plotting_df_val = pd.DataFrame(X_val.squeeze()[:,ch,:])
+            plotting_df_val['outcome']=y_val
+            plotting_df_val['group']='val'
+            plotting_df = pd.concat([plotting_df_train, plotting_df_val])
+            plotting_df = plotting_df.melt(id_vars=['outcome', 'group'])
+            sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', style='group', ax=axes[ch])
+        plt.savefig(os.path.join(subj_outdir, f'{subj}_psds.png'))
         plt.close()
         
-        tmp = X_val.squeeze()
-        n_channels = tmp.shape[1]
-        n_cols = 5
-        n_rows = ceil(n_channels/n_cols)
-
-        fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(15, n_rows * 5))
-        axes = axes.flatten()
-        for ch in range(tmp.shape[1]):
-            plotting_df = pd.DataFrame(tmp[:,ch,:])
-            plotting_df['outcome']=y_val
-            plotting_df = plotting_df.melt(id_vars='outcome')
-            sns.lineplot(data=plotting_df, x='variable', y='value', hue='outcome', ax=axes[ch])
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_validation_psds.png'))
-        plt.close()
-    
     #%% Evaluate the model
     X_test = X_test.reshape(X_test.shape[0], -1)
     X_val = X_val.reshape(X_val.shape[0], -1)
     
-    y_pred_probs = model.predict(X_test)
+    # y_pred_probs = model.predict(X_test)
+    y_pred_probs = model.predict_proba(X_test)[:,1]
     predictions_df = pd.DataFrame(y_pred_probs)
     predictions_df['truth'] = y_test
     predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
@@ -789,7 +805,8 @@ for idx, subj in enumerate(subjects):
         
         # X_val, y_val = psds_normalized_validation, events
         
-        y_pred_probs_val = model.predict(X_val)
+        # y_pred_probs_val = model.predict(X_val)
+        y_pred_probs_val = model.predict_proba(X_val)[:,1]
         predictions_val_df = pd.DataFrame(y_pred_probs_val)
         predictions_val_df['truth'] = y_val
         predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))
