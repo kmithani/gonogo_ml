@@ -17,14 +17,14 @@ args = parser.parse_args()
 
 #%%
 # For debugging, assign the arguments manually
-class Args:
-    def __init__(self):
-        self.use_rfe = False
-        self.use_pca = True
-        self.rfe_method = 'LogisticRegression'
-        self.online = True
-        self.fmax = 40
-args = Args()
+# class Args:
+#     def __init__(self):
+#         self.use_rfe = False
+#         self.use_pca = True
+#         self.rfe_method = 'LogisticRegression'
+#         self.online = True
+#         self.fmax = 40
+# args = Args()
 
 # General imports
 import os
