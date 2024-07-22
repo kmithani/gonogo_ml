@@ -13,3 +13,6 @@
 !models/logisticregression/
 !models/logisticregression/scripts/
 !models/logisticregression/scripts/**
+!models/svm/
+!models/svm/scripts/
+!models/svm/scripts/**
