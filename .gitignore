@@ -16,3 +16,6 @@
 !models/svm/
 !models/svm/scripts/
 !models/svm/scripts/**
+!models/randomforest/
+!models/randomforest/scripts/
+!models/randomforest/scripts/**
