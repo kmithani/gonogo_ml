@@ -663,8 +663,9 @@ for idx, subj in enumerate(subjects):
     
     params = {
         'C': [0.1, 1, 10, 100],
-        'kernel': ['linear', 'rbf'],
-        'gamma': ['scale', 'auto']
+        'kernel': ['linear', 'rbf', 'sigmoid'],
+        'gamma': ['scale', 'auto'],
+        'class_weight': ['balanced', None]
     }
     
     gs_svm = GridSearchCV(SVC(), params, cv=5, n_jobs=10, verbose=1, scoring='f1')
