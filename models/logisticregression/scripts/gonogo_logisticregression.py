@@ -577,6 +577,7 @@ for idx, subj in enumerate(subjects):
         pca = PCA(n_components=0.95)
         # Training data is in shape n_trials x n_channels x n_freqs
         tmp = pca.fit_transform(training_data.reshape(training_data.shape[0], -1))
+        n_components = pca.n_components_
         print(f'\nFitted PCA with {pca.n_components_} components to explain 95% of the variance in the training data')
         
         # Plot the explained variance
@@ -634,6 +635,10 @@ for idx, subj in enumerate(subjects):
             psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
             
         if use_pca:
+            if psds_normalized_validation.shape[0] < n_components:
+                print(f'Not enough trials to fit PCA. Skipping...')
+                continue
+            pca = PCA(n_components=n_components)
             tmp = pca.fit_transform(psds_normalized_validation.reshape(psds_normalized_validation.shape[0],-1))
             psds_normalized_validation = tmp
         
