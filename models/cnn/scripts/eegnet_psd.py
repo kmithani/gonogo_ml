@@ -17,7 +17,7 @@ args = parser.parse_args()
 # # For debugging, assign the arguments manually
 # class Args:
 #     def __init__(self):
-#         self.use_rfe = True
+#         self.use_rfe = False
 #         self.rfe_method = 'LogisticRegression'
 #         self.online = True
 #         self.fmax = 40
@@ -43,9 +43,19 @@ from sklearn.linear_model import LogisticRegression
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
 import keras.backend as K
-from EEGModels import EEGNet_PSD
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Activation, Permute, Dropout
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, AveragePooling2D
+from tensorflow.keras.layers import SeparableConv2D, DepthwiseConv2D
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import SpatialDropout2D
+from tensorflow.keras.regularizers import l1_l2
+from tensorflow.keras.layers import Input, Flatten
+from tensorflow.keras.constraints import max_norm
+from tensorflow.keras import backend as K
+# from EEGModels import EEGNet_PSD
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
 from sklearn.feature_selection import RFE
@@ -67,6 +77,8 @@ import h5py
 from tqdm import tqdm
 import glob
 from seegloc import fuzzyquery_aal
+from pathlib import Path
+from time import strftime
 
 # User-defined variables
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
@@ -158,7 +170,8 @@ frequency_bands = {
 
 if not os.path.exists(outdir):
     os.makedirs(outdir)
-    
+
+keras.utils.set_random_seed(42)
 
 #######################################################################################################################################
 # Functions
@@ -380,13 +393,55 @@ def convert_labels_to_bipolar(labels):
     
     return bipolar_labels
 
+def EEGNet_PSD_custom(Chans, Samples, dropoutRate = 0.50, 
+                        F1 = 4, D = 2, mode = 'multi_channel',):
+    
+    '''
+    Custom-built CNN, based on the EEGNet architecture, using PSDs as input features
+    
+    '''
+    
+    input1   = Input(shape = (Chans, Samples, 1))
+
+    ##################################################################
+
+    block1       = Conv2D(F1, (1, 10), use_bias = False, padding = 'same')(input1)
+    block1       = BatchNormalization()(block1)
+
+    if mode == 'multi_channel':
+        
+        block1       = DepthwiseConv2D((Chans, 1), use_bias = False, 
+                                    depth_multiplier = D,
+                                    depthwise_constraint = max_norm(1.))(block1)
+        block1       = BatchNormalization()(block1)
+
+    block1       = Activation('relu')(block1)
+    block1       = AveragePooling2D((1, 2), padding = 'valid')(block1) # 8 is also good
+    block1       = Dropout(dropoutRate)(block1)
+    
+    block2       = SeparableConv2D(F1*D, (1, 4), use_bias = False, padding = 'same')(block1)
+    block2       = BatchNormalization()(block2)
+    block2       = Activation('relu')(block2)
+    block2       = AveragePooling2D((1, 2), padding = 'valid')(block2) # Can be used
+    block2       = Dropout(dropoutRate)(block2)
+    
+    flatten      = Flatten(name = 'flatten')(block2)
+    
+    dense        = Dense(1, name = 'dense')(flatten)
+    out      = Activation('sigmoid', name = 'sigmoid')(dense)
+    
+    return Model(inputs=input1, outputs=out)
+
+def get_run_logdir(root_logdir):
+    return Path(root_logdir) / strftime("run_%Y_%m_%d_%H_%M_%S")
+
 #######################################################################################################################################
 # Main
 #######################################################################################################################################
 
 for idx, subj in enumerate(subjects):
     
-    # if idx == 1: break # For debugging
+    # if idx == 2: break # For debugging
     if subj not in validation_data.keys(): continue # For debugging
     
     subj_outdir = os.path.join(outdir, subj)
@@ -495,7 +550,7 @@ for idx, subj in enumerate(subjects):
         if rfe_method == 'SVC':
             estimator = SVC(kernel='linear')
         elif rfe_method == 'LogisticRegression':
-            estimator = LogisticRegression()
+            estimator = LogisticRegression(max_iter=10000)
         
         selector = RFE(estimator, n_features_to_select=10, step=1, verbose=0)
         selector = selector.fit(rfe_data, events)
@@ -536,7 +591,7 @@ for idx, subj in enumerate(subjects):
     else:
         training_data = psds_normalized
     
-    X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42, stratify=events)
     X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
     
     # Add some data from a different day to improve model performance
@@ -573,7 +628,7 @@ for idx, subj in enumerate(subjects):
             psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
         
         if use_online:
-            X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42)
+            X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42, stratify=events)
             X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
             X_boost = X_boost.reshape(X_boost.shape[0], X_boost.shape[1], X_boost.shape[2], 1)
             X_train = np.concatenate((X_train, X_boost), axis=0)
@@ -586,18 +641,23 @@ for idx, subj in enumerate(subjects):
         continue
     
     #%% Train the model
-    optimizer=keras.optimizers.Adam(learning_rate=0.001)
+    optimizer=keras.optimizers.Adam(learning_rate=0.0001)
     checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     num_chans = X_train.shape[1]
     num_samples = X_train.shape[2]
-    early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='min', restore_best_weights=True)
-    model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model.h5'), monitor='val_loss', verbose=1, save_best_only=True)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, verbose=1, mode='min')
-    model = EEGNet_PSD(Chans=num_chans, Samples=num_samples)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
+    model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
+    run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
+    tensorboard_cb = TensorBoard(log_dir=run_logdir)
+    print('*'*50)
+    print(f'\nPoint TensorBoard to {run_logdir}')
+    print('*'*50)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
+    model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
     model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    fitted_model = model.fit(X_train, y_train, epochs=1000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, reduce_lr])
+    fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
     
     plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
     plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
@@ -621,16 +681,20 @@ for idx, subj in enumerate(subjects):
     #%% Test the model
     # Get model predictions and metrics
     from keras.models import load_model
-    model = load_model(os.path.join(checkpoint_dir, f'{subj}_model.h5'), custom_objects={'precision_metric': precision_metric})
+    # model = load_model(os.path.join(checkpoint_dir, f'{subj}_model.h5'), custom_objects={'precision_metric': precision_metric})
+    model = load_model(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'), custom_objects={'precision_metric': precision_metric})
     y_pred_probs = model.predict(X_test)
     predictions_df = pd.DataFrame(y_pred_probs)
     predictions_df['truth'] = y_test
     predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
     auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
     auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
-    precision, recall, _ = metrics.precision_recall_curve(y_test, y_pred_probs)
+    precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
+    # Find the threshold that maximizes the F1 score
+    f1_scores = 2 * (precision * recall) / (precision + recall)
+    optimal_threshold = thresholds[np.argmax(f1_scores)]
     fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
-    confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > 0.5)
+    confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
     
     disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
     disp.plot(cmap='Blues')
@@ -702,7 +766,7 @@ for idx, subj in enumerate(subjects):
         auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
         precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
         fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
-        val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > 0.5)
+        val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
         
         disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
         disp.plot(cmap='Blues')
