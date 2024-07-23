@@ -1,3 +1,4 @@
+#%%
 ##################################################################################################
 # Quick script to aggregate AUCs across subjects
 #
@@ -18,7 +19,7 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/svm/analysis/psd_40Hz/online/using_rfe/SVC/'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/svm/analysis/psd_40Hz/online/using_rfe/RandomForest/'
 
 subjects = [x.split('/')[-1] for x in glob(os.path.join(analysis_dir, 'SEEG-*'))]
 
@@ -81,7 +82,7 @@ for subj in subjects:
 if '1' not in predictions_df.columns:
     predictions_df = predictions_df.rename(columns={'0': '1'})
     predictions_df['0'] = 1 - predictions_df['1']
-
+    
 #%% Summarize model performance on holdout set
 
 # Plot precision-recall curve
@@ -139,31 +140,21 @@ else:
 sns.despine()
 plt.show()
 
-# tprs = []
-# fprs = []
-# plt.figure(figsize=(8, 6), dpi=300)
-# for subj in model_metrics['subject'].unique():
-#     subj_confmat = np.array(np.matrix(model_metrics[model_metrics['subject'] == subj]['confusion_matrix'].values[0].replace('\n', ';')))
-#     tpr = subj_confmat[1, 1] / (subj_confmat[1, 1] + subj_confmat[1, 0])
-#     tprs.append(tpr)
-#     fpr = subj_confmat[0, 1] / (subj_confmat[0, 1] + subj_confmat[0, 0])
-#     fprs.append(fpr)
-#     # Plot the ROC curve
-#     plt.plot([0, fpr, 1], [0, tpr, 1], 'b-', color='gray', alpha=0.2)
-# mean_tpr = np.mean(tprs)
-# mean_fpr = np.mean(fprs)
-# plt.plot([0, mean_fpr, 1], [0, mean_tpr, 1], 'b-', color='darkred', label='Mean ROC curve')
-# plt.plot([0, 1], [0, 1], 'k--', label='Random', color='black')
-# t, p = ttest_1samp(model_metrics['roc_auc'], 0.5)
-# if p < 0.05:
-#     plt.text(0.95, 0.05, f'AUC = {model_metrics["roc_auc"].mean():.2f}* ± {model_metrics["roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-# else:
-#     plt.text(0.95, 0.05, f'AUC = {model_metrics["roc_auc"].mean():.2f} ± {model_metrics["roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-# plt.xlabel('False Positive Rate')
-# plt.ylabel('True Positive Rate')
-# plt.title('Holdout Set')
-# sns.despine()
-# plt.show()
+# Calculate F1 score
+y_preds_all = []
+y_all = []
+f1_all = []
+for subj in predictions_df['subject'].unique():
+    y_pred = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'holdout')][['0','1']].values
+    y = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'holdout')]['truth'].values
+    f1 = metrics.f1_score(y, y_pred[:, 1] > 0.5)
+    y_preds_all.append(y_pred)
+    y_all.append(y)
+    f1_all.append(f1)
+print(f'Mean F1 for Holdout: {np.mean(f1_all):.2f} ± {np.std(f1_all):.2f}')
+t, p = ttest_1samp(f1_all, 0.5)
+print(f'One-sample t-test for F1 score from 0.5: t = {t}, p = {p}')
+    
 
 #%% Summarize model performance on different day dataset
 # print(f'\nMean diff-day AUC: {model_metrics["val_roc_auc"].mean()} ± {model_metrics["val_roc_auc"].std()}')
@@ -228,28 +219,17 @@ else:
 sns.despine()
 plt.show()
 
-# tprs = []
-# fprs = []
-# plt.figure(figsize=(8, 6), dpi=300)
-# for subj in model_metrics['subject'].unique():
-#     subj_confmat = np.array(np.matrix(model_metrics[model_metrics['subject'] == subj]['val_confusion_matrix'].values[0].replace('\n', ';')))
-#     tpr = subj_confmat[1, 1] / (subj_confmat[1, 1] + subj_confmat[1, 0])
-#     tprs.append(tpr)
-#     fpr = subj_confmat[0, 1] / (subj_confmat[0, 1] + subj_confmat[0, 0])
-#     fprs.append(fpr)
-#     # Plot the ROC curve
-#     plt.plot([0, fpr, 1], [0, tpr, 1], 'b-', color='gray', alpha=0.2)
-# mean_tpr = np.mean(tprs)
-# mean_fpr = np.mean(fprs)
-# plt.plot([0, mean_fpr, 1], [0, mean_tpr, 1], 'b-', color='darkred', label='Mean ROC curve')
-# plt.plot([0, 1], [0, 1], 'k--', label='Random', color='black')
-# t, p = ttest_1samp(model_metrics['val_roc_auc'], 0.5)
-# if p < 0.05:
-#     plt.text(0.95, 0.05, f'AUC = {model_metrics["val_roc_auc"].mean():.2f}* ± {model_metrics["val_roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-# else:
-#     plt.text(0.95, 0.05, f'AUC = {model_metrics["val_roc_auc"].mean():.2f} ± {model_metrics["val_roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-# plt.xlabel('False Positive Rate')
-# plt.ylabel('True Positive Rate')
-# plt.title('Different Day')
-# sns.despine()
-# plt.show()
+# Calculate F1 score
+y_preds_all = []
+y_all = []
+f1_all = []
+for subj in predictions_df['subject'].unique():
+    y_pred = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'diffday')][['0','1']].values
+    y = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'diffday')]['truth'].values
+    f1 = metrics.f1_score(y, y_pred[:, 1] > 0.5)
+    y_preds_all.append(y_pred)
+    y_all.append(y)
+    f1_all.append(f1)
+print(f'Mean F1 for Different Day: {np.mean(f1_all):.2f} ± {np.std(f1_all):.2f}')
+t, p = ttest_1samp(f1_all, 0.5)
+print(f'One-sample t-test for F1 score from 0.5: t = {t}, p = {p}')
