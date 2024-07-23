@@ -20,3 +20,4 @@
 !models/randomforest/scripts/
 !models/randomforest/scripts/**
 !models/ml_model_performance.xlsx
+!models/aggregate_aucs.py
