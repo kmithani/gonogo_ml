@@ -10,21 +10,21 @@ import argparse
 parser = argparse.ArgumentParser(description='Train and test the EEGNet model using PSD estimates.')
 parser.add_argument('--use_rfe', action='store_true', help='Whether or not to use recursive feature elimination to select the best channels based on broadband power')
 parser.add_argument('--use_pca', action='store_true', help='Whether or not to use PCA for dimensionality reduction')
-parser.add_argument('--rfe_method', type=str, choices=["SVC", "LogisticRegression"], help='The type of RFE to use. Options are "SVC" or "LogisticRegression"', nargs='?')
+parser.add_argument('--rfe_method', type=str, choices=["SVC", "LogisticRegression", "RandomForest"], help='The type of RFE to use. Options are "SVC" or "LogisticRegression"', nargs='?')
 parser.add_argument('--online', action='store_true', help='Whether or not to use data from a different day to improve model performance')
 parser.add_argument('--fmax', type=int, help='The maximum frequency to use for the PSD estimates', nargs='?')
 args = parser.parse_args()
 
 # #%%
-# # For debugging, assign the arguments manually
-# class Args:
-#     def __init__(self):
-#         self.use_rfe = False
-#         self.use_pca = False
-#         self.rfe_method = 'LogisticRegression'
-#         self.online = True
-#         self.fmax = 40
-# args = Args()
+# For debugging, assign the arguments manually
+class Args:
+    def __init__(self):
+        self.use_rfe = True
+        self.use_pca = False
+        self.rfe_method = 'RandomForest'
+        self.online = True
+        self.fmax = 40
+args = Args()
 
 # General imports
 import os
@@ -54,6 +54,7 @@ from sklearn.feature_selection import RFE
 from sklearn.svm import SVC
 from sklearn.decomposition import PCA
 from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
 
 # Neuroimaging libraries
 import nibabel as nib
@@ -109,6 +110,10 @@ if args.use_rfe:
         print('\nUsing Logistic Regression for RFE')
         rfe_method = 'LogisticRegression'
         outdir = os.path.join(outdir, 'LogisticRegression')
+    elif args.rfe_method == 'RandomForest':
+        print('\nUsing Random Forest for RFE')
+        rfe_method = 'RandomForest'
+        outdir = os.path.join(outdir, 'RandomForest')
     use_rfe = True
 else:
     use_rfe = False
@@ -534,6 +539,8 @@ for idx, subj in enumerate(subjects):
             estimator = SVC(kernel='linear')
         elif rfe_method == 'LogisticRegression':
             estimator = LogisticRegression(random_state=42, max_iter=1000)
+        elif rfe_method == 'RandomForest':
+            estimator = RandomForestClassifier(random_state=42)
         
         selector = RFE(estimator, n_features_to_select=10, step=1, verbose=0)
         selector = selector.fit(rfe_data, events)
@@ -563,7 +570,10 @@ for idx, subj in enumerate(subjects):
         plot_3d_brain(plotting_df, subj_outdir, f'{rfe_method}_rois', symmetric_cmap=False, cmap='viridis', threshold=0.01)
         
         # And also plot the coefficients
-        plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.coef_[0]})
+        if rfe_method == 'SVC' or rfe_method == 'LogisticRegression':
+            plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.coef_[0]})
+        elif rfe_method == 'RandomForest':
+            plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.feature_importances_})
         plotting_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels_coefs.csv'))
         # Drop unknown regions
         plotting_df = plotting_df[plotting_df['aal_region'] != 'Unknown']

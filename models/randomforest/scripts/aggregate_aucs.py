@@ -18,7 +18,7 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/randomforest/analysis/psd_40Hz/online/'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/randomforest/analysis/psd_40Hz/online/using_rfe/SVC/'
 
 subjects = [x.split('/')[-1] for x in glob(os.path.join(analysis_dir, 'SEEG-*'))]
 
