@@ -89,12 +89,17 @@ if '1' not in predictions_df.columns:
 y_preds_all = []
 y_all = []
 auprc_all = []
+prediction_thresholds = {}
 plt.figure(figsize=(8, 6), dpi=300)
 for subj in predictions_df['subject'].unique():
     # Plot ROC curve
     y_pred = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'holdout')][['0','1']].values
     y = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'holdout')]['truth'].values
-    precision, recall, _ = metrics.precision_recall_curve(y, y_pred[:, 1])
+    precision, recall, thresholds = metrics.precision_recall_curve(y, y_pred[:, 1])
+    # Identify the optimal prediction threshold for each subject
+    f1 = 2 * (precision * recall) / (precision + recall)
+    optimal_threshold = thresholds[np.nanargmax(f1)]
+    prediction_thresholds[subj] = optimal_threshold
     y_preds_all.append(y_pred)
     y_all.append(y)
     auprc_all.append(metrics.auc(recall, precision))
@@ -147,7 +152,7 @@ f1_all = []
 for subj in predictions_df['subject'].unique():
     y_pred = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'holdout')][['0','1']].values
     y = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'holdout')]['truth'].values
-    f1 = metrics.f1_score(y, y_pred[:, 1] > 0.5)
+    f1 = metrics.f1_score(y, y_pred[:, 1] > prediction_thresholds[subj])
     y_preds_all.append(y_pred)
     y_all.append(y)
     f1_all.append(f1)
@@ -226,7 +231,7 @@ f1_all = []
 for subj in predictions_df['subject'].unique():
     y_pred = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'diffday')][['0','1']].values
     y = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['condition'] == 'diffday')]['truth'].values
-    f1 = metrics.f1_score(y, y_pred[:, 1] > 0.5)
+    f1 = metrics.f1_score(y, y_pred[:, 1] > prediction_thresholds[subj])
     y_preds_all.append(y_pred)
     y_all.append(y)
     f1_all.append(f1)
