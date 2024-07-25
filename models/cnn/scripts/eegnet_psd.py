@@ -80,6 +80,7 @@ import glob
 from seegloc import fuzzyquery_aal
 from pathlib import Path
 from time import strftime
+import random
 
 # User-defined variables
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
@@ -183,6 +184,9 @@ if not os.path.exists(outdir):
     os.makedirs(outdir)
 
 keras.utils.set_random_seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
+random.seed(42)
 
 #######################################################################################################################################
 # Functions
@@ -455,7 +459,7 @@ for idx, subj in enumerate(subjects):
     for n_ch in n_chans:
     
         # if idx == 2: break # For debugging
-        if subj not in validation_data.keys(): continue # For debugging
+        # if subj not in validation_data.keys(): continue # For debugging
         
         subj_outdir = os.path.join(outdir, f'{n_ch}_channels', subj)
         
@@ -656,7 +660,10 @@ for idx, subj in enumerate(subjects):
                 X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
                 y_val = events
         else:
-            continue
+            print(f'No different day data for {subj}, cannot use online training...')
+            # For simplicity, use the test data as the validation data (results will be redundant)
+            X_val = X_test
+            y_val = y_test
         
         #%%
         # Save the training and validation data
