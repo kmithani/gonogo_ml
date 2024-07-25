@@ -19,9 +19,11 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/SVC/'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/all_channels/'
 
 subjects = [x.split('/')[-1] for x in glob(os.path.join(analysis_dir, 'SEEG-*'))]
+
+exclude_subjects = ['SEEG-SK-55', 'SEEG-SK-64', 'SEEG-SK-69']
 
 # Miscellaneous
 plt.rcParams['font.family'] = 'FreeSans'
@@ -52,6 +54,8 @@ predictions_df = pd.DataFrame()
 for subj in subjects:
     if not os.path.exists(os.path.join(analysis_dir, subj, f'{subj}_predictions.csv')) or not os.path.exists(os.path.join(analysis_dir, subj, f'{subj}_validation_predictions.csv')):
         print(f'{subj} missing predictions')
+        continue
+    if subj in exclude_subjects:
         continue
     subj_predictions = pd.read_csv(os.path.join(analysis_dir, subj, f'{subj}_predictions.csv')).drop(columns=['Unnamed: 0'])
     subj_predictions['subject'] = subj
