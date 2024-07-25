@@ -204,7 +204,7 @@ def plot_contacts(plotting_df, outdir, weights_colname='weight', colors_colname=
 ##################################################################################################################################
 
 for subj in subjects:
-    if subj != 'SEEG-SK-54': continue # For debugging
+    # if subj != 'SEEG-SK-54': continue # For debugging
     
     subj_analysis_dir = os.path.join(analysis_dir, subj)
     subj_outdir = os.path.join(subj_analysis_dir, 'shap')
@@ -247,6 +247,8 @@ for subj in subjects:
     
     cmap_threshold = np.max(np.abs(shap_values_mean))
     sns.heatmap(shap_values_mean, cmap='RdBu_r', center=0).invert_yaxis()
+    plt.savefig(os.path.join(subj_outdir, 'shap_heatmap.png'))
+    plt.close()
     
     #%%
     subj_labels = pd.read_csv(os.path.join(labels_dir, f'{subj}.labels.csv'))
