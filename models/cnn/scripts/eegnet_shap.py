@@ -29,7 +29,7 @@ from glob import glob
 from seegloc import fuzzyquery_aal
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/all_channels/'
 labels_dir = '/d/gmi/1/karimmithani/seeg/labels'
 
 subjects = [x.split('/')[-1] for x in glob(os.path.join(analysis_dir, 'SEEG-*'))]
@@ -230,6 +230,8 @@ for subj in subjects:
     y_train = np.load(os.path.join(subj_data_dir, f'{subj}_y_train.npy'))
     y_val = np.load(os.path.join(subj_data_dir, f'{subj}_y_val.npy'))
     
+    if len(X_val.shape) != 4: # In cases where no different day data was available, an extra dimension needs to be added
+        X_val = np.expand_dims(X_val, axis=-1)
     
     #%%
     

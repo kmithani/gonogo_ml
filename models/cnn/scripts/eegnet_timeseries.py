@@ -14,13 +14,13 @@ parser.add_argument('--use_rfe', action='store_true', help='Whether or not to us
 parser.add_argument('--rfe_method', type=str, choices=["SVC", "LogisticRegression"], help='The type of RFE to use. Options are "SVC" or "LogisticRegression"', nargs='?')
 args = parser.parse_args()
 
-# # For debugging, assign the arguments manually
-# class Args:
-#     def __init__(self):
-#         self.use_rfe = True
-#         self.rfe_method = 'LogisticRegression'
-#         self.with_baselining = False
-# args = Args()
+# For debugging, assign the arguments manually
+class Args:
+    def __init__(self):
+        self.use_rfe = False
+        self.rfe_method = 'LogisticRegression'
+        self.with_baselining = False
+args = Args()
 
 # General imports
 import os
@@ -42,7 +42,7 @@ from sklearn.linear_model import LogisticRegression
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
 from EEGModels import EEGNet
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
@@ -65,10 +65,15 @@ import h5py
 from tqdm import tqdm
 import glob
 from seegloc import fuzzyquery_aal
+from time import strftime
+from pathlib import Path
+import random
 
 # User-defined variables
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
-outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/sfreq_256_1600ms'
+target_sfreq = 256 # Resampling frequency
+interested_timeperiod = (-1.6, 0)
+outdir = f'/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/sfreq_{target_sfreq}_{int((np.abs(interested_timeperiod[1] - interested_timeperiod[0]))*1000)}ms'
 labels_dir = '/d/gmi/1/karimmithani/seeg/labels'
 cles_array_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/cles'
 
@@ -114,7 +119,6 @@ else:
     
 # figures_dir = os.path.join(outdir, 'figures')
 montage = 'bipolar'
-target_sfreq = 256 # Resampling frequency
 
 subjects = {
     'SEEG-SK-53': {'day3': ['GoNogo']},
@@ -140,8 +144,6 @@ validation_data = {'SEEG-SK-54': {'day4': ['GoNogo_py']},
 
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
 
-interested_timeperiod = (-1.6, 0)
-
 frequency_bands = {
     'delta': (1, 4),
     'theta': (4, 8),
@@ -153,6 +155,11 @@ frequency_bands = {
 
 if not os.path.exists(outdir):
     os.makedirs(outdir)
+    
+keras.utils.set_random_seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
+random.seed(42)
 
 #######################################################################################################################################
 # Functions
@@ -349,6 +356,14 @@ def plot_3d_brain(plotting_df, outdir, prefix, symmetric_cmap=True, cmap='RdBu_r
     plot = plotting.view_surf(big_fsaverage.pial_left, big_texture, cmap=cmap, bg_map=big_fsaverage.sulc_left, threshold=threshold, symmetric_cmap=symmetric_cmap)
     plot.save_as_html(os.path.join(outdir, f'{prefix}_left.html'))
 
+def precision_metric(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+def get_run_logdir(root_logdir):
+    return Path(root_logdir) / strftime("run_%Y_%m_%d_%H_%M_%S")
 
 #######################################################################################################################################
 # Main
@@ -358,7 +373,7 @@ def plot_3d_brain(plotting_df, outdir, prefix, symmetric_cmap=True, cmap='RdBu_r
 for idx, subj in enumerate(subjects):
     
     # if idx == 1: break # For debugging
-    if subj not in validation_data.keys(): continue # For debugging
+    # if subj not in validation_data.keys(): continue # For debugging
     
     subj_outdir = os.path.join(outdir, subj)
     
@@ -518,19 +533,27 @@ for idx, subj in enumerate(subjects):
         X_train = np.concatenate((X_train, X_boost), axis=0)
         y_train = np.concatenate((y_train, y_boost), axis=0)
     else:
-        continue
+        print(f'No validation data available for {subj}. Cannot use online training...')
+        # For simplicity, use the test data as the validation data (results will be redundant)
+        X_val = X_test
+        y_val = y_test
     
     # Define and train EEGNet model
-    optimizer=keras.optimizers.Adam(learning_rate=0.001)
+    optimizer=keras.optimizers.Adam(learning_rate=0.0001)
     checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1, mode='min', restore_best_weights=True)
-    model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model.h5'), monitor='val_loss', verbose=1, save_best_only=True)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, verbose=1, mode='min')
+    early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
+    model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
+    # reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, verbose=1, mode='min')
+    run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
+    tensorboard_cb = TensorBoard(log_dir=run_logdir)
+    print('*'*50)
+    print(f'\nPoint TensorBoard to {run_logdir}')
+    print('*'*50)
     model = EEGNet(nb_classes=2, Chans=X_train.shape[1], Samples=X_train.shape[2], dropoutRate=0.5, kernLength=128, F1=8, D=2, F2=16, dropoutType='Dropout')
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    fitted_model = model.fit(X_train, y_train, epochs=1000, batch_size=4, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, reduce_lr])
+    fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=4, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb])
     
     plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
     plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
@@ -548,7 +571,14 @@ for idx, subj in enumerate(subjects):
     plt.close()
     # plt.show()
     
+    # Save the model using SavedModel format
+    model.save(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'))
+    # And also in HDF5 format
+    model.save(os.path.join(checkpoint_dir, f'{subj}_gonogo_model.h5'))
+    
     # Get model predictions and metrics
+    from keras.models import load_model
+    model = load_model(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'), custom_objects={'precision_metric': precision_metric})
     y_pred_probs = model.predict(X_test)
     # Save y_pred_probs as a csv
     predictions_df = pd.DataFrame(y_pred_probs)
