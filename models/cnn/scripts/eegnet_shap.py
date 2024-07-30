@@ -407,7 +407,7 @@ for subj in subjects:
     plt.yticks(rotation=0)
     plt.savefig(os.path.join(subj_outdir, 'shap_heatmap_aal.png'))
     plt.close()
-    
+    shap_values_aal.to_csv(os.path.join(subj_outdir, 'shap_values_aal_allfreqs.csv'), index=False)
     
     shap_values_aal_freqbands = shap_values_aal_freqbands.sort_values(by='delta', ascending=False)
     sns.heatmap(shap_values_aal_freqbands.drop(columns='aal_region'), cmap='RdBu_r', center=0)
@@ -415,6 +415,7 @@ for subj in subjects:
     plt.yticks(rotation=0)
     plt.savefig(os.path.join(subj_outdir, 'shap_heatmap_aal_freqbands.png'))
     plt.close()
+    shap_values_aal_freqbands.to_csv(os.path.join(subj_outdir, 'shap_values_aal_freqbands.csv'), index=False)
     
     #%% Aggregate and plot positive features
     positive_thresh = np.percentile(shap_values_mean, 98)
