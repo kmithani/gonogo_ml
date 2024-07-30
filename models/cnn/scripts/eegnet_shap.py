@@ -24,6 +24,9 @@ import nibabel as nib
 from nilearn import plotting, datasets
 from nilearn.surface import vol_to_surf
 
+# DSP libraries
+import mne
+
 # Misc libraries
 from glob import glob
 from seegloc import fuzzyquery_aal
@@ -40,6 +43,23 @@ frequency_bands = {
     'alpha': (8, 13),
     'beta': (13, 30),
     'gamma': (30, 40)
+}
+
+# Essentially null variables, only needed to load gonogo epochs to match channel labels:
+target_sfreq = 250
+montage = 'bipolar'
+processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
+subjects = {
+    'SEEG-SK-53': {'day3': ['GoNogo']},
+    'SEEG-SK-54': {'day2': ['GoNogo_py']},
+    'SEEG-SK-55': {'day2': ['GoNogo_py']},
+    'SEEG-SK-62': {'day1': ['GoNogo_py']},
+    'SEEG-SK-63': {'day1': ['GoNogo_py']},
+    'SEEG-SK-64': {'day1': ['GoNogo_py']},
+    'SEEG-SK-66': {'day1': ['GoNogo_py']},
+    # 'SEEG-SK-67': {'day1': ['GoNogo_py']}, # Not enough NoGo trials
+    'SEEG-SK-68': {'day1': ['GoNogo_py']},
+    'SEEG-SK-69': {'day1': ['GoNogo_py']}
 }
 
 ##################################################################################################################################
@@ -68,6 +88,7 @@ def aggregate_features(channels, frequencies, shap_values_mean, labels):
     that aggregates the important features
     
     '''
+    
     features = pd.DataFrame({'chidx': channels, 'freqidx': frequencies})
     features['channel_labels'] = [labels['Label'].values[x] for x in channels]
     features = pd.merge(features, labels[['Label', 'mni_x', 'mni_y', 'mni_z']], left_on='channel_labels', right_on='Label').drop(columns='Label')
@@ -198,6 +219,93 @@ def plot_contacts(plotting_df, outdir, weights_colname='weight', colors_colname=
         plot = plotting.view_markers(marker_coords=marker_coords, marker_size=marker_size, marker_color='red')
     plot.save_as_html(os.path.join(outdir, filename))
 
+
+def get_aal_regions(channels):
+    '''
+    Get AAL regions for a list of channels
+    
+    Parameters
+    ----------
+    channels : pd.DataFrame
+        DataFrame containing the following columns:
+            - Channel: Channel name
+            - mni_x: MNI x-coordinate
+            - mni_y: MNI y-coordinate
+            - mni_z: MNI z-coordinate
+            
+    '''
+    
+    for rowidx, row in channels.iterrows():
+        coordinates = [row['mni_x'], row['mni_y'], row['mni_z']]
+        if np.isnan(coordinates).any():
+            channels.loc[rowidx, 'aal_region'] = np.nan
+            continue
+        aal_region = fuzzyquery_aal.lookup_aal_region(coordinates, fuzzy_dist=10)[1]
+        channels.loc[rowidx, 'aal_region'] = aal_region
+    
+    return channels
+
+def convert_labels_to_bipolar(labels):
+    '''
+    Given a dataframe of labels and coordinates, convert them to a bipolar montage
+    
+    Inputs:
+        labels: a pandas dataframe containing the labels and coordinates
+    Outputs:
+        bipolar_labels: a pandas dataframe containing the bipolar labels and coordinates
+        
+    '''
+    
+    labels = labels[labels['DataValid']!='n']
+    labels['bipolar_channels'] = labels['Pinbox'] + '-' + labels['Pinbox'].shift(-1)
+    # Drop rows where the prefix of the two items in the bipolar channel are not the same
+    bipolar_labels = labels[labels['bipolar_channels'].str.split('-').str[0].str.replace(r'\d+', '', regex=True) == labels['bipolar_channels'].str.split('-').str[1].str.replace(r'\d+', '', regex=True)]
+    
+    return bipolar_labels
+
+
+def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=processed_dir):
+    
+    '''
+    Load SEEG data for GoNogo task from epochs
+    
+    Parameters
+    ----------
+    subjects : dict
+        A dictionary containing the subjects, days, and tasks.
+    target_sfreq : int
+        The target sampling frequency.
+        
+    Returns
+    -------
+    subjects_epochs : mne.Epochs
+        The epochs object containing the data.
+    
+    '''
+    
+    subjects_epochs = {}
+    
+    for subj in subjects:
+        epoch_files = []
+        for day in subjects[subj]:
+            for task in subjects[subj][day]:
+                epoch_files.append(glob(os.path.join(processed_dir, subj, day, task, f'*{montage}*.fif')))
+        epoch_files = [item for sublist in epoch_files for item in sublist]
+        epochs = mne.concatenate_epochs([mne.read_epochs(f) for f in epoch_files])
+        
+        # # Decimate epochs
+        # decim_factor = int(epochs.info['sfreq'] / target_sfreq)
+        # print(f'Resampling epochs to {epochs.info["sfreq"] / decim_factor} Hz')
+        epochs.resample(target_sfreq)
+        
+        # Store epochs
+        subjects_epochs[f'{subj}'] = epochs
+        
+        # Clear memory
+        del epochs
+        
+    return subjects_epochs
+
 #%%
 ##################################################################################################################################
 # Main
@@ -258,11 +366,61 @@ for subj in subjects:
     if not os.path.exists(subj_brainplots_dir):
         os.makedirs(subj_brainplots_dir)
     
+    # Some chnanels may have been dropped during pre-procesing steps
+    subj_dict = {subj: subjects[subj]} # Done this way to allow the data loader to work with a single subject
+    subj_epochs = gonogo_dataloader(subj_dict, target_sfreq)
+    subj_epochs = subj_epochs[subj]
+    
+    #%% Assign AAL regions to the channels
+    subj_labels_bipolar = convert_labels_to_bipolar(subj_labels)
+    subj_labels_bipolar = subj_labels_bipolar[subj_labels_bipolar['Type'] == 'SEEG']
+    subj_labels_bipolar = subj_labels_bipolar[subj_labels_bipolar['bipolar_channels'].isin(subj_epochs.ch_names)].reset_index(drop=True)
+    subj_aal = get_aal_regions(subj_labels_bipolar)
+    
+    # subj_frequencies = pd.read_csv(os.path.join(subj_analysis_dir, f'{subj}_freqs.csv'))
+    # TEMP TODO: Remove this line once the frequencies are saved in the correct location for each subject
+    subj_frequencies = pd.read_csv(os.path.join(os.path.join(analysis_dir, 'SEEG-SK-53'), 'SEEG-SK-53_freqs.csv'))
+    
+    # Raise an error if the number of channels does not match the number of SEEG contacts in the subject's labels
+    if shap_values_mean.shape[0] != len(subj_labels_bipolar[subj_labels_bipolar['Type'] == 'SEEG']):
+        raise ValueError("Number of channels does not match number of SEEG contacts")
+    
+    # Set up indices for converting frequency indices to frequency bands
+    subj_frequency_idx = {freq_band: [] for freq_band in frequency_bands.keys()}
+    for freqidx in np.arange(shap_values_mean.shape[1]):
+        actual_freq = subj_frequencies.loc[freqidx, 'freqs']
+        actual_freq_band = get_frequency_band(actual_freq)
+        subj_frequency_idx[actual_freq_band].append(freqidx)
+    
+    shap_values_aal = pd.DataFrame(shap_values_mean)
+    shap_values_aal['aal_region'] = subj_aal['aal_region']
+    shap_values_aal = shap_values_aal.groupby('aal_region').agg('mean').reset_index(drop=False)
+    # Replace frequency indices with frequency bands
+    shap_values_aal_freqbands = pd.DataFrame()
+    shap_values_aal_freqbands['aal_region'] = shap_values_aal['aal_region']
+    for freq_band in subj_frequency_idx.keys():
+        shap_values_aal_freqbands[freq_band] = np.mean(shap_values_aal.iloc[:, 1:].iloc[:, subj_frequency_idx[freq_band]], axis=1)
+    
+    shap_values_aal = shap_values_aal.sort_values(by=0, ascending=False)
+    sns.heatmap(shap_values_aal.drop(columns='aal_region'), cmap='RdBu_r', center=0)
+    plt.yticks(ticks=np.arange(shap_values_aal.shape[0]), labels=shap_values_aal['aal_region'])
+    plt.yticks(rotation=0)
+    plt.savefig(os.path.join(subj_outdir, 'shap_heatmap_aal.png'))
+    plt.close()
+    
+    
+    shap_values_aal_freqbands = shap_values_aal_freqbands.sort_values(by='delta', ascending=False)
+    sns.heatmap(shap_values_aal_freqbands.drop(columns='aal_region'), cmap='RdBu_r', center=0)
+    plt.yticks(ticks=np.arange(shap_values_aal_freqbands.shape[0]), labels=shap_values_aal_freqbands['aal_region'])
+    plt.yticks(rotation=0)
+    plt.savefig(os.path.join(subj_outdir, 'shap_heatmap_aal_freqbands.png'))
+    plt.close()
+    
     #%% Aggregate and plot positive features
     positive_thresh = np.percentile(shap_values_mean, 98)
     
     positive_channels, positive_frequencies = np.where(shap_values_mean > positive_thresh)
-    positive_features = aggregate_features(positive_channels, positive_frequencies, shap_values_mean, subj_labels)
+    positive_features = aggregate_features(positive_channels, positive_frequencies, shap_values_mean, subj_labels_bipolar)
     positive_features.to_csv(os.path.join(subj_outdir, 'positive_features.csv'), index=False)
     # Project all the features onto the left hemisphere
     positive_features['aal_region'] = positive_features['aal_region'].apply(lambda x: x.replace('_R', '_L') if isinstance(x, str) else x)
@@ -281,7 +439,7 @@ for subj in subjects:
     negative_thresh = np.percentile(shap_values_mean, 2)
     
     negative_channels, negative_frequencies = np.where(shap_values_mean < negative_thresh)
-    negative_features = aggregate_features(negative_channels, negative_frequencies, shap_values_mean, subj_labels)
+    negative_features = aggregate_features(negative_channels, negative_frequencies, shap_values_mean, subj_labels_bipolar)
     negative_features.to_csv(os.path.join(subj_outdir, 'negative_features.csv'), index=False)
     negative_features_agg = negative_features.groupby(['aal_region', 'frequency_band']).agg({'shap_value': 'mean'}).reset_index()
     

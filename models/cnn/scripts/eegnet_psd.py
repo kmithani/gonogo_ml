@@ -532,6 +532,9 @@ for idx, subj in enumerate(subjects):
         # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
         signal_length = subj_epochs_data.shape[2]
         psds, freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10)
+        # Save the frequencies as a CSV
+        freqs_df = pd.DataFrame({'freqs': freqs})
+        freqs_df.to_csv(os.path.join(subj_outdir, f'{subj}_freqs.csv'))
         # Normalize psds by the Simpson integral
         
         psds_normalized = np.zeros(psds.shape)
