@@ -21,3 +21,6 @@
 !models/randomforest/scripts/**
 !models/ml_model_performance.xlsx
 !models/aggregate_aucs.py
+!models/aggregate_shap.py
+!models/detect_outliers.py
+!models/identify_best_model.py
