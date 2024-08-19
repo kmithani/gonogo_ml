@@ -168,5 +168,23 @@ plt.yticks(np.arange(len(all_shap_values_aggregated['aal_region'])), all_shap_va
 plt.savefig(os.path.join(outdir, 'shap_aggregated_heatmap.png'), dpi=300, bbox_inches='tight')
 plt.close()
 
+#%%
+for freq_band in all_shap_values_aggregated.columns[1:]:
+    all_shap_values_aggregated_freqband = all_shap_values_aggregated[['aal_region', freq_band]].sort_values(by=freq_band, ascending=False)
+    plt.figure(figsize=(2, 10))
+    sns.heatmap(all_shap_values_aggregated_freqband.iloc[:,1:], cmap='coolwarm', center=0, cbar_kws={'label': 'SHAP value'})
+    # plt.ylabel('AAL region')
+    # plt.title(f'SHAP values ({freq_band})')
+    plt.yticks(np.arange(len(all_shap_values_aggregated_freqband['aal_region'])), all_shap_values_aggregated_freqband['aal_region'], rotation=0)
+    plt.show()
+    # Repeat but plot the top 5 highest and lowest values
+    top_vals = pd.concat((all_shap_values_aggregated_freqband.head(5), all_shap_values_aggregated_freqband.tail(5)), axis=0)
+    plt.figure(figsize=(2, 5))
+    sns.heatmap(top_vals.iloc[:,1:], cmap='coolwarm', center=0, cbar_kws={'label': 'SHAP value'})
+    # plt.ylabel('AAL region')
+    plt.yticks(np.arange(len(top_vals['aal_region'])), top_vals['aal_region'], rotation=0)
+    plt.show()
+    
+#%% 
 for freq_band in all_shap_values_aggregated.columns[1:]:
     plot_3d_brain(all_shap_values_aggregated[['aal_region', freq_band]], outdir, f'shap_{freq_band}', weight_label=freq_band, symmetric_cmap=True, cmap='coolwarm', threshold=0.0001)

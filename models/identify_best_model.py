@@ -18,7 +18,7 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/RandomForest'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression'
 hyperparameters = {
     'n_chans': '_channels'
 }

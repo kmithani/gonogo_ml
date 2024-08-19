@@ -81,6 +81,7 @@ from seegloc import fuzzyquery_aal
 from pathlib import Path
 from time import strftime
 import random
+import time
 
 # User-defined variables
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
@@ -690,8 +691,10 @@ for idx, subj in enumerate(subjects):
         run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
         tensorboard_cb = TensorBoard(log_dir=run_logdir)
         print('*'*50)
-        print(f'\nPoint TensorBoard to {run_logdir}')
+        print(f'\nPoint TensorBoard to:\n{run_logdir}')
         print('*'*50)
+        # Pause for a bit to allow the user to copy the logdir
+        time.sleep(10)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
         model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
         model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
