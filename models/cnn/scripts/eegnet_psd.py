@@ -49,7 +49,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Activation, Permute, Dropout
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, AveragePooling2D
 from tensorflow.keras.layers import SeparableConv2D, DepthwiseConv2D
-from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import BatchNormalization, Lambda, Embedding, Multiply
 from tensorflow.keras.layers import SpatialDropout2D
 from tensorflow.keras.regularizers import l1_l2
 from tensorflow.keras.layers import Input, Flatten
@@ -410,7 +410,8 @@ def convert_labels_to_bipolar(labels):
     return bipolar_labels
 
 def EEGNet_PSD_custom(Chans, Samples, dropoutRate = 0.50, 
-                        F1 = 4, D = 2, mode = 'multi_channel',):
+                        F1 = 4, D = 2, mode = 'multi_channel',
+                        num_days = 2):
     
     '''
     Custom-built CNN, based on the EEGNet architecture, using PSDs as input features
@@ -418,10 +419,19 @@ def EEGNet_PSD_custom(Chans, Samples, dropoutRate = 0.50,
     '''
     
     input1   = Input(shape = (Chans, Samples, 1))
-
+    
+    # Add a layer to account for inter-day non-stationarity
+    day_input = Input(shape=(1,))
+    
+    # Day-specific linear transformation layer
+    day_embedding = Embedding(input_dim=num_days, output_dim=Chans*Samples, input_length=1)(day_input)
+    day_embedding = tf.reshape(day_embedding, (-1, Chans, Samples, 1))
+    
+    x = Multiply()([input1, day_embedding])
+    
     ##################################################################
 
-    block1       = Conv2D(F1, (1, 10), use_bias = False, padding = 'same')(input1)
+    block1       = Conv2D(F1, (1, 12), use_bias = False, padding = 'same')(x) # Original kernel size = (1, 10)
     block1       = BatchNormalization()(block1)
 
     if mode == 'multi_channel':
@@ -446,7 +456,7 @@ def EEGNet_PSD_custom(Chans, Samples, dropoutRate = 0.50,
     dense        = Dense(1, name = 'dense')(flatten)
     out      = Activation('sigmoid', name = 'sigmoid')(dense)
     
-    return Model(inputs=input1, outputs=out)
+    return Model(inputs=[input1, day_input], outputs=out)
 
 def get_run_logdir(root_logdir):
     return Path(root_logdir) / strftime("run_%Y_%m_%d_%H_%M_%S")
@@ -619,6 +629,8 @@ for idx, subj in enumerate(subjects):
         
         X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42, stratify=events)
         X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
+        day_train = np.zeros(X_train.shape[0])
+        day_test = np.zeros(X_test.shape[0])
         
         # Add some data from a different day to improve model performance
         if subj in validation_data.keys():
@@ -659,15 +671,19 @@ for idx, subj in enumerate(subjects):
                 X_boost = X_boost.reshape(X_boost.shape[0], X_boost.shape[1], X_boost.shape[2], 1)
                 X_train = np.concatenate((X_train, X_boost), axis=0)
                 y_train = np.concatenate((y_train, y_boost), axis=0)
+                day_train = np.concatenate((day_train, np.ones(X_boost.shape[0])))
+                day_val = np.ones(X_val.shape[0])
             else:
                 X_val = psds_normalized_validation
                 X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
                 y_val = events
+                day_val = np.ones(X_val.shape[0])
         else:
             print(f'No different day data for {subj}, cannot use online training...')
             # For simplicity, use the test data as the validation data (results will be redundant)
             X_val = X_test
             y_val = y_test
+            day_val = np.ones(X_val.shape[0])
         
         #%%
         # Save the training and validation data
@@ -676,8 +692,10 @@ for idx, subj in enumerate(subjects):
             os.makedirs(out_data_dir)
         np.save(os.path.join(out_data_dir, f'{subj}_X_train.npy'), X_train)
         np.save(os.path.join(out_data_dir, f'{subj}_X_val.npy'), X_val)
+        np.save(os.path.join(out_data_dir, f'{subj}_day_train.npy'), day_train)
         np.save(os.path.join(out_data_dir, f'{subj}_y_train.npy'), y_train)
         np.save(os.path.join(out_data_dir, f'{subj}_y_val.npy'), y_val)
+        np.save(os.path.join(out_data_dir, f'{subj}_day_val.npy'), day_val)
         
         #%% Train the model
         optimizer=keras.optimizers.Adam(learning_rate=0.0001)
@@ -698,7 +716,8 @@ for idx, subj in enumerate(subjects):
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
         model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
         model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-        fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+        # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+        fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
         
         plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
         plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
@@ -726,7 +745,8 @@ for idx, subj in enumerate(subjects):
         from keras.models import load_model
         # model = load_model(os.path.join(checkpoint_dir, f'{subj}_model.h5'), custom_objects={'precision_metric': precision_metric})
         model = load_model(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'), custom_objects={'precision_metric': precision_metric})
-        y_pred_probs = model.predict(X_test)
+        # y_pred_probs = model.predict(X_test)
+        y_pred_probs = model.predict([X_test, day_test])
         predictions_df = pd.DataFrame(y_pred_probs)
         predictions_df['truth'] = y_test
         predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
@@ -801,7 +821,8 @@ for idx, subj in enumerate(subjects):
             
             # X_val, y_val = psds_normalized_validation, events
             
-            y_pred_probs_val = model.predict(X_val)
+            # y_pred_probs_val = model.predict(X_val)
+            y_pred_probs_val = model.predict([X_val, day_val])
             predictions_val_df = pd.DataFrame(y_pred_probs_val)
             predictions_val_df['truth'] = y_val
             predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))
@@ -841,4 +862,121 @@ for idx, subj in enumerate(subjects):
             # plt.show()
         
     
-    
+
+
+
+
+
+#%%
+#######################################################################################################################################
+# TEMPORARY CODE FOR TESTING
+#######################################################################################################################################
+
+# # Use a temporary directory
+# subj_outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/tmp'
+
+# optimizer=keras.optimizers.Adam(learning_rate=0.0001)
+# checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
+# if not os.path.exists(checkpoint_dir):
+#     os.makedirs(checkpoint_dir)
+# num_chans = X_train.shape[1]
+# num_samples = X_train.shape[2]
+# early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
+# model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
+# run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
+# tensorboard_cb = TensorBoard(log_dir=run_logdir)
+# print('*'*50)
+# print(f'\nPoint TensorBoard to:\n{run_logdir}')
+# print('*'*50)
+# # Pause for a bit to allow the user to copy the logdir
+# # time.sleep(10)
+# reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
+# model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
+# model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+# fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+
+# plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
+# plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
+# plt.legend()
+# plt.title(f'{subj} EEGNet PSD model accuracy')
+# plt.show()
+
+# plt.plot(fitted_model.history['loss'], color='blue', label='train')
+# plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
+# plt.legend()
+# plt.title(f'{subj} EEGNet PSD model loss')
+# plt.show()
+
+# # Test the model
+
+# y_pred_probs = model.predict([X_test, day_test])
+# predictions_df = pd.DataFrame(y_pred_probs)
+# predictions_df['truth'] = y_test
+# predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
+# auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
+# auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
+# precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
+# # Find the threshold that maximizes the F1 score
+# f1_scores = 2 * (precision * recall) / (precision + recall)
+# optimal_threshold = thresholds[np.argmax(f1_scores)]
+# fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
+# confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
+
+# disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
+# disp.plot(cmap='Blues')
+
+# plt.figure()
+# plt.plot(fpr, tpr)
+# plt.plot([0, 1], [0, 1], linestyle='--')
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title(f'{subj} ROC curve')
+# plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
+# plt.show()
+
+# plt.figure()
+# plt.plot(recall, precision)
+# plt.xlabel('Recall')
+# plt.ylabel('Precision')
+# plt.title(f'{subj} Precision-Recall curve')
+# plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+# noskill = len(y_test[y_test==1]) / len(y_test)
+# plt.axhline(noskill, linestyle='--', color='red')
+# plt.show()
+
+# # Validate on data from a different day
+# y_pred_probs_val = model.predict([X_val, day_val])
+# predictions_val_df = pd.DataFrame(y_pred_probs_val)
+# predictions_val_df['truth'] = y_val
+# auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
+# auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
+# precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
+# fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
+# val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
+
+# disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
+# disp.plot(cmap='Blues')
+
+# # Plot ROC and PRC curves
+# plt.figure()
+# plt.plot(fpr_val, tpr_val)
+# plt.plot([0, 1], [0, 1], linestyle='--')
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title(f'{subj} ROC curve')
+# plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
+# # plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
+# # plt.close()
+# plt.show()
+
+# plt.figure()
+# plt.plot(recall_val, precision_val)
+# plt.xlabel('Recall')
+# plt.ylabel('Precision')
+# plt.title(f'{subj} Precision-Recall curve')
+# plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+# noskill = len(y_val[y_val==1]) / len(y_val)
+# plt.axhline(noskill, linestyle='--', color='red')
+# # plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
+# # plt.close()
+# plt.show()
