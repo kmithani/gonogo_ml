@@ -14,14 +14,14 @@ parser.add_argument('--online', action='store_true', help='Whether or not to use
 parser.add_argument('--fmax', type=int, help='The maximum frequency to use for the PSD estimates', nargs='?')
 args = parser.parse_args()
 
-# # For debugging, assign the arguments manually
-# class Args:
-#     def __init__(self):
-#         self.use_rfe = False
-#         self.rfe_method = 'LogisticRegression'
-#         self.online = True
-#         self.fmax = 40
-# args = Args()
+# For debugging, assign the arguments manually
+class Args:
+    def __init__(self):
+        self.use_rfe = True
+        self.rfe_method = 'LogisticRegression'
+        self.online = True
+        self.fmax = 40
+args = Args()
 
 # General imports
 import os
@@ -49,7 +49,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Activation, Permute, Dropout
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, AveragePooling2D
 from tensorflow.keras.layers import SeparableConv2D, DepthwiseConv2D
-from tensorflow.keras.layers import BatchNormalization, Lambda, Embedding, Multiply
+from tensorflow.keras.layers import BatchNormalization, Lambda, Embedding, Multiply, Add
 from tensorflow.keras.layers import SpatialDropout2D
 from tensorflow.keras.regularizers import l1_l2
 from tensorflow.keras.layers import Input, Flatten
@@ -144,16 +144,17 @@ montage = 'bipolar'
 target_sfreq = 250 # Resampling frequency
 
 subjects = {
-    'SEEG-SK-53': {'day3': ['GoNogo']},
-    'SEEG-SK-54': {'day2': ['GoNogo_py']},
-    'SEEG-SK-55': {'day2': ['GoNogo_py']},
-    'SEEG-SK-62': {'day1': ['GoNogo_py']},
-    'SEEG-SK-63': {'day1': ['GoNogo_py']},
-    'SEEG-SK-64': {'day1': ['GoNogo_py']},
-    'SEEG-SK-66': {'day1': ['GoNogo_py']},
-    # 'SEEG-SK-67': {'day1': ['GoNogo_py']}, # Not enough NoGo trials
-    'SEEG-SK-68': {'day1': ['GoNogo_py']},
-    'SEEG-SK-69': {'day1': ['GoNogo_py']}
+    # 'SEEG-SK-53': {'day3': ['GoNogo']},
+    # 'SEEG-SK-54': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-55': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-62': {'day1': ['GoNogo_py']},
+    # 'SEEG-SK-63': {'day1': ['GoNogo_py']},
+    # 'SEEG-SK-64': {'day1': ['GoNogo_py']},
+    # 'SEEG-SK-66': {'day1': ['GoNogo_py']},
+    # # 'SEEG-SK-67': {'day1': ['GoNogo_py']}, # Not enough NoGo trials
+    # 'SEEG-SK-68': {'day1': ['GoNogo_py']},
+    # 'SEEG-SK-69': {'day1': ['GoNogo_py']}
+    'SEEG-SK-70': {'day1': ['GoNogo_py']}
 }
 
 validation_data = {
@@ -790,7 +791,7 @@ for idx, subj in enumerate(subjects):
         
         #%%
         # Validate on data from a different day
-        if subj in validation_data.keys():
+        # if subj in validation_data.keys():
             # validation_dict = {subj: validation_data[subj]}
             # subj_validation_data = gonogo_dataloader(validation_dict, target_sfreq)
             # subj_validation_epochs = subj_validation_data[subj][interested_events]
@@ -822,44 +823,44 @@ for idx, subj in enumerate(subjects):
             # X_val, y_val = psds_normalized_validation, events
             
             # y_pred_probs_val = model.predict(X_val)
-            y_pred_probs_val = model.predict([X_val, day_val])
-            predictions_val_df = pd.DataFrame(y_pred_probs_val)
-            predictions_val_df['truth'] = y_val
-            predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))
-            auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
-            auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
-            precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
-            fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
-            val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
-            
-            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
-            disp.plot(cmap='Blues')
-            plt.savefig(os.path.join(subj_outdir, f'{subj}_confmat_val.png'))
-            plt.close()
-            
-            # Plot ROC and PRC curves
-            plt.figure()
-            plt.plot(fpr_val, tpr_val)
-            plt.plot([0, 1], [0, 1], linestyle='--')
-            plt.xlabel('False Positive Rate')
-            plt.ylabel('True Positive Rate')
-            plt.title(f'{subj} ROC curve')
-            plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
-            plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
-            plt.close()
-            # plt.show()
-            
-            plt.figure()
-            plt.plot(recall_val, precision_val)
-            plt.xlabel('Recall')
-            plt.ylabel('Precision')
-            plt.title(f'{subj} Precision-Recall curve')
-            plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-            noskill = len(y_val[y_val==1]) / len(y_val)
-            plt.axhline(noskill, linestyle='--', color='red')
-            plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
-            plt.close()
-            # plt.show()
+        y_pred_probs_val = model.predict([X_val, day_val])
+        predictions_val_df = pd.DataFrame(y_pred_probs_val)
+        predictions_val_df['truth'] = y_val
+        predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))
+        auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
+        auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
+        precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
+        fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
+        val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
+        
+        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
+        disp.plot(cmap='Blues')
+        plt.savefig(os.path.join(subj_outdir, f'{subj}_confmat_val.png'))
+        plt.close()
+        
+        # Plot ROC and PRC curves
+        plt.figure()
+        plt.plot(fpr_val, tpr_val)
+        plt.plot([0, 1], [0, 1], linestyle='--')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(f'{subj} ROC curve')
+        plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
+        plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
+        plt.close()
+        # plt.show()
+        
+        plt.figure()
+        plt.plot(recall_val, precision_val)
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title(f'{subj} Precision-Recall curve')
+        plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+        noskill = len(y_val[y_val==1]) / len(y_val)
+        plt.axhline(noskill, linestyle='--', color='red')
+        plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
+        plt.close()
+        # plt.show()
         
     
 
