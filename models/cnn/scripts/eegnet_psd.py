@@ -15,13 +15,13 @@ parser.add_argument('--fmax', type=int, help='The maximum frequency to use for t
 args = parser.parse_args()
 
 # # For debugging, assign the arguments manually
-class Args:
-    def __init__(self):
-        self.use_rfe = False
-        self.rfe_method = 'LogisticRegression'
-        self.online = True
-        self.fmax = 40
-args = Args()
+# class Args:
+#     def __init__(self):
+#         self.use_rfe = False
+#         self.rfe_method = 'LogisticRegression'
+#         self.online = True
+#         self.fmax = 40
+# args = Args()
 
 # General imports
 import os
@@ -420,34 +420,37 @@ def EEGNet_PSD_custom(Chans, Samples, dropoutRate = 0.50,
     
     '''
     
+    initializer = tf.keras.initializers.GlorotUniform(seed=42)
+    
     input1   = Input(shape = (Chans, Samples, 1))
     
     # Add a layer to account for inter-day non-stationarity
     day_input = Input(shape=(1,))
     
     # Day-specific linear transformation layer
-    day_embedding = Embedding(input_dim=num_days, output_dim=Chans*Samples, input_length=1)(day_input)
+    day_embedding = Embedding(input_dim=num_days, output_dim=Chans*Samples, input_length=1, embeddings_initializer=initializer)(day_input)
     day_embedding = tf.reshape(day_embedding, (-1, Chans, Samples, 1))
     
     x = Multiply()([input1, day_embedding])
     
     ##################################################################
 
-    block1       = Conv2D(F1, (1, 12), use_bias = False, padding = 'same')(x) # Original kernel size = (1, 10)
+    block1       = Conv2D(F1, (1, 12), use_bias = False, padding = 'same', kernel_initializer=initializer)(x) # Original kernel size = (1, 10)
     block1       = BatchNormalization()(block1)
 
     if mode == 'multi_channel':
         
         block1       = DepthwiseConv2D((Chans, 1), use_bias = False, 
                                     depth_multiplier = D,
-                                    depthwise_constraint = max_norm(1.))(block1)
+                                    depthwise_constraint = max_norm(1.),
+                                    kernel_initializer=initializer)(block1)
         block1       = BatchNormalization()(block1)
 
     block1       = Activation('relu')(block1)
     block1       = AveragePooling2D((1, 2), padding = 'valid')(block1) # 8 is also good
     block1       = Dropout(dropoutRate)(block1)
     
-    block2       = SeparableConv2D(F1*D, (1, 4), use_bias = False, padding = 'same')(block1)
+    block2       = SeparableConv2D(F1*D, (1, 4), use_bias = False, padding = 'same', kernel_initializer=initializer)(block1)
     block2       = BatchNormalization()(block2)
     block2       = Activation('relu')(block2)
     block2       = AveragePooling2D((1, 2), padding = 'valid')(block2) # Can be used
@@ -455,7 +458,7 @@ def EEGNet_PSD_custom(Chans, Samples, dropoutRate = 0.50,
     
     flatten      = Flatten(name = 'flatten')(block2)
     
-    dense        = Dense(1, name = 'dense')(flatten)
+    dense        = Dense(1, name = 'dense', kernel_initializer=initializer)(flatten)
     out      = Activation('sigmoid', name = 'sigmoid')(dense)
     
     return Model(inputs=[input1, day_input], outputs=out)
