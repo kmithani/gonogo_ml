@@ -92,6 +92,7 @@ outdir = f'/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_{f
 labels_dir = '/d/gmi/1/karimmithani/seeg/labels'
 cles_array_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/cles'
 n_chans = [10, 15, 20, 25] # Hyperparameter for number of channels when using RFE
+tp_class_weights = [2, 4, 6, 8] # Hyperparameter for class weights
 
 if args.online:
     print()
@@ -477,400 +478,403 @@ for idx, subj in enumerate(subjects):
         # if idx == 2: break # For debugging
         # if subj not in validation_data.keys(): continue # For debugging
         
-        subj_outdir = os.path.join(outdir, f'{n_ch}_channels', subj)
+        subj_higher_outdir = os.path.join(outdir, f'{n_ch}_channels', subj)
         
         # if os.path.exists(os.path.join(subj_outdir, f'{subj}_completed.BAK')):
         #     print(f'{subj} already processed. Skipping...')
         #     continue
         
-        print(f'\nProcessing {subj}...')
+        for tp_class_weight in tp_class_weights:
+            subj_outdir = os.path.join(outdir, f'{n_ch}_channels', subj, f'tp_weight_{tp_class_weight}')
         
-        if not os.path.exists(subj_outdir):
-            os.makedirs(subj_outdir)
-                
-        subj_dict = {subj: subjects[subj]} # Done this way to allow the data loader to work with a single subject
-        subj_epochs = gonogo_dataloader(subj_dict, target_sfreq)
-        subj_epochs = subj_epochs[subj][interested_events]
-        event_ids = subj_epochs.event_id
-        
-        # Load subject labels
-        subj_labels = pd.read_csv(os.path.join(labels_dir, f'{subj}.labels.csv'))
-        subj_labels = convert_labels_to_bipolar(subj_labels)
-        subj_labels = subj_labels[subj_labels['Type']=='SEEG']
-        
-        # Some chnanels may have been dropped during pre-procesing steps
-        subj_labels = subj_labels[subj_labels['bipolar_channels'].isin(subj_epochs.ch_names)].reset_index(drop=True)
-        
-        if len(subj_epochs.ch_names) != len(subj_labels):
-            print(f'Number of channels in epochs ({len(subj_epochs.ch_names)}) does not match number of channels in labels ({len(subj_labels)}). Skipping...')
-            continue
-        
-        # Detect spikes
-        nonresampled_epochs = gonogo_dataloader(subj_dict, 2048)[subj][interested_events]
-        epochs_array = nonresampled_epochs.get_data()
-        spike_trials = []
-        spike_channels = []
-        Fs = nonresampled_epochs.info['sfreq']
-        
-        if not os.path.exists(os.path.join(subj_outdir, f'{subj}_spikes.csv')):
-            print('Detecting spikes...')
-            for trial in tqdm(range(epochs_array.shape[0])):
-                trial_spike_channels = []
-                for channel in range(epochs_array.shape[1]):
-                    spikes, rp, isspike = detect_spikes(epochs_array[trial, channel, :], Fs)
-                    if len(spikes) > 0:
-                        trial_spike_channels.append(channel)
-                if len(trial_spike_channels) > 0:
-                    spike_trials.append(trial)
-                    spike_channels.append(trial_spike_channels)
+            print(f'\nProcessing {subj}...')
+            
+            if not os.path.exists(subj_outdir):
+                os.makedirs(subj_outdir)
+                    
+            subj_dict = {subj: subjects[subj]} # Done this way to allow the data loader to work with a single subject
+            subj_epochs = gonogo_dataloader(subj_dict, target_sfreq)
+            subj_epochs = subj_epochs[subj][interested_events]
+            event_ids = subj_epochs.event_id
+            
+            # Load subject labels
+            subj_labels = pd.read_csv(os.path.join(labels_dir, f'{subj}.labels.csv'))
+            subj_labels = convert_labels_to_bipolar(subj_labels)
+            subj_labels = subj_labels[subj_labels['Type']=='SEEG']
+            
+            # Some chnanels may have been dropped during pre-procesing steps
+            subj_labels = subj_labels[subj_labels['bipolar_channels'].isin(subj_epochs.ch_names)].reset_index(drop=True)
+            
+            if len(subj_epochs.ch_names) != len(subj_labels):
+                print(f'Number of channels in epochs ({len(subj_epochs.ch_names)}) does not match number of channels in labels ({len(subj_labels)}). Skipping...')
+                continue
+            
+            # Detect spikes
+            nonresampled_epochs = gonogo_dataloader(subj_dict, 2048)[subj][interested_events]
+            epochs_array = nonresampled_epochs.get_data()
+            spike_trials = []
+            spike_channels = []
+            Fs = nonresampled_epochs.info['sfreq']
+            
+            if not os.path.exists(os.path.join(subj_higher_outdir, f'{subj}_spikes.csv')):
+                print('Detecting spikes...')
+                for trial in tqdm(range(epochs_array.shape[0])):
+                    trial_spike_channels = []
+                    for channel in range(epochs_array.shape[1]):
+                        spikes, rp, isspike = detect_spikes(epochs_array[trial, channel, :], Fs)
+                        if len(spikes) > 0:
+                            trial_spike_channels.append(channel)
+                    if len(trial_spike_channels) > 0:
+                        spike_trials.append(trial)
+                        spike_channels.append(trial_spike_channels)
 
-            spike_df = pd.DataFrame({'trial': spike_trials, 'channels': spike_channels})
-            spike_df.to_csv(os.path.join(subj_outdir, f'{subj}_spikes.csv'))
-        else:
-            spike_df = pd.read_csv(os.path.join(subj_outdir, f'{subj}_spikes.csv'))
-        
-        # Remove trials with spikes
-        subj_epochs.drop(spike_df['trial'].values)
+                spike_df = pd.DataFrame({'trial': spike_trials, 'channels': spike_channels})
+                spike_df.to_csv(os.path.join(subj_higher_outdir, f'{subj}_spikes.csv'))
+            else:
+                spike_df = pd.read_csv(os.path.join(subj_higher_outdir, f'{subj}_spikes.csv'))
+            
+            # Remove trials with spikes
+            subj_epochs.drop(spike_df['trial'].values)
 
-        # Before cropping, baseline the data if requested
-        # if with_baselining:
-        #     subj_epochs.apply_baseline((None, interested_timeperiod[0]))
-        
-        # Crop data to the time period of interest
-        subj_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
-        
-        #%% Normalize data
-        subj_epochs_data = subj_epochs.get_data()
-        subj_epochs_data = zscore(subj_epochs_data, axis=2)
-        
-        btr_sos = butter(4, [0.5, 40], btype='bandpass', fs=target_sfreq, output='sos')
-        filtered_data = sosfiltfilt(btr_sos, subj_epochs_data, axis=2)
-        # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
-        signal_length = subj_epochs_data.shape[2]
-        psds, freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10)
-        # Save the frequencies as a CSV
-        freqs_df = pd.DataFrame({'freqs': freqs})
-        freqs_df.to_csv(os.path.join(subj_outdir, f'{subj}_freqs.csv'))
-        # Normalize psds by the Simpson integral
-        
-        psds_normalized = np.zeros(psds.shape)
-        for trial in range(psds.shape[0]):
-            psds_normalized[trial, :, :] = 100 * (psds[trial, :, :] / simpson(psds[trial, :, :], freqs)[:,None])
-
-        # Use RFE to select the best features
-        ##  Aggregate data across frequency bands
-        # rfe_data_orig = np.zeros((psds_normalized.shape[0], psds_normalized.shape[1], len(frequency_bands)))
-        # for band in frequency_bands:
-        #     fmin, fmax = frequency_bands[band]
-        #     if fmax not in freqs:
-        #         continue
-        #     band_indices = np.where((freqs >= fmin) & (freqs <= fmax))[0]
-        #     rfe_data_orig[:, :, list(frequency_bands.keys()).index(band)] = np.mean(psds_normalized[:, :, band_indices], axis=2)
-        # rfe_data = rfe_data_orig.reshape(rfe_data_orig.shape[0], -1)
-        ## Alternate: Use more coarse frequency bands
-        rfe_psds, rfe_freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=int(target_sfreq/4), n_overlap=int(signal_length/8), n_jobs=10)
-        rfe_psds_normalized = np.zeros(rfe_psds.shape)
-        for trial in range(rfe_psds.shape[0]):
-            rfe_psds_normalized[trial, :, :] = 100 * (rfe_psds[trial, :, :] / simpson(rfe_psds[trial, :, :], rfe_freqs)[:,None])
-        rfe_data = rfe_psds_normalized.reshape(rfe_psds_normalized.shape[0], -1)
-        
-        #%% Extract events and binarize them for better interpretability
-        events_orig = subj_epochs.events[:,-1]
-        inverse_event_dict = {v: k for k, v in event_ids.items()}
-        events = [inverse_event_dict[event] for event in events_orig]
-        events = [0 if event == interested_events[0] else 1 for event in events]
-        events = np.array(events)
-        
-        #%% Feature selection
-        if use_rfe:
-            if rfe_method == 'SVC':
-                estimator = SVC(kernel='linear')
-            elif rfe_method == 'LogisticRegression':
-                estimator = LogisticRegression(max_iter=10000)
-            elif rfe_method == 'RandomForest':
-                estimator = RandomForestClassifier(random_state=42)
+            # Before cropping, baseline the data if requested
+            # if with_baselining:
+            #     subj_epochs.apply_baseline((None, interested_timeperiod[0]))
             
-            selector = RFE(estimator, n_features_to_select=n_ch, step=1, verbose=0)
-            selector = selector.fit(rfe_data, events)
+            # Crop data to the time period of interest
+            subj_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
             
-            important_indices = np.where(selector.support_)[0]    
-            # important_channels, important_freqs = np.unravel_index(important_indices, psds_normalized.shape[1:])
-            important_channels, important_freqs = np.unravel_index(important_indices, rfe_psds_normalized.shape[1:])
-            important_freqs = freqs[important_freqs]
-            
-            # Extract labels for the important channels and save as a CSV
-            important_channels_df = pd.DataFrame({'chidx': important_channels, 'freq': important_freqs, 'label': subj_labels.loc[important_channels, 'bipolar_channels']}).reset_index(drop=True)
-            important_channels_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels.csv'))
-            
-            aal_regions = []
-            for ch in important_channels:
-                row = subj_labels.iloc[ch, :]
-                coordinates = row['mni_x'], row['mni_y'], row['mni_z']
-                if np.isnan(coordinates).any():
-                    aal_regions.append('Unknown')
-                    continue
-                aal_regions.append(fuzzyquery_aal.lookup_aal_region(coordinates, fuzzy_dist=10)[1])
-            
-            plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': important_freqs})
-            plotting_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels_frequencies.csv'))
-            # Drop unknown regions
-            plotting_df = plotting_df[plotting_df['aal_region'] != 'Unknown']
-            plot_3d_brain(plotting_df, subj_outdir, f'{rfe_method}_rois', symmetric_cmap=False, cmap='viridis', threshold=0.01)
-            
-            # And also plot the coefficients
-            if rfe_method == 'SVC' or rfe_method == 'LogisticRegression':
-                plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.coef_[0]})
-            elif rfe_method == 'RandomForest':
-                plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.feature_importances_})
-            plotting_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels_coefs.csv'))
-            # Drop unknown regions
-            plotting_df = plotting_df[plotting_df['aal_region'] != 'Unknown']
-            plot_3d_brain(plotting_df, subj_outdir, f'{rfe_method}_coefs', symmetric_cmap=True, cmap='RdBu_r', threshold=0.01)
-            
-            # training_data = rfe_data[:, important_indices]
-            training_data = psds_normalized[:, important_channels, :]
-        else:
-            training_data = psds_normalized
-        
-        X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42, stratify=events)
-        X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
-        day_train = np.zeros(X_train.shape[0])
-        day_test = np.zeros(X_test.shape[0])
-        
-        # Add some data from a different day to improve model performance
-        if subj in validation_data.keys():
-            validation_dict = {subj: validation_data[subj]}
-            subj_validation_data = gonogo_dataloader(validation_dict, target_sfreq)
-            subj_validation_epochs = subj_validation_data[subj][interested_events]
-            subj_validation_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
-            
-            # Normalize data
-            subj_validation_epochs_data = subj_validation_epochs.get_data()
-            subj_validation_epochs_data = zscore(subj_validation_epochs_data, axis=2)
+            #%% Normalize data
+            subj_epochs_data = subj_epochs.get_data()
+            subj_epochs_data = zscore(subj_epochs_data, axis=2)
             
             btr_sos = butter(4, [0.5, 40], btype='bandpass', fs=target_sfreq, output='sos')
-            filtered_data_validation = sosfiltfilt(btr_sos, subj_validation_epochs_data, axis=2)
-            # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data_validation, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
-            psds, freqs = mne.time_frequency.psd_array_welch(filtered_data_validation, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10)
+            filtered_data = sosfiltfilt(btr_sos, subj_epochs_data, axis=2)
+            # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
+            signal_length = subj_epochs_data.shape[2]
+            psds, freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10)
+            # Save the frequencies as a CSV
+            freqs_df = pd.DataFrame({'freqs': freqs})
+            freqs_df.to_csv(os.path.join(subj_outdir, f'{subj}_freqs.csv'))
             # Normalize psds by the Simpson integral
-            psds_normalized_validation = np.zeros(psds.shape)
-            for trial in range(psds.shape[0]):
-                psds_normalized_validation[trial, :, :] = 100 * (psds[trial, :, :] / simpson(psds[trial, :, :], freqs)[:,None])
-            # for trial in range(psds.shape[0]):
-            #     for channel in range(psds.shape[1]):
-            #         psds_normalized_validation[trial, channel, :] = psds[trial, channel, :] / simpson(psds[trial, channel, :], freqs)
             
-            # Extract events and binarize them for better interpretability
-            events_orig = subj_validation_epochs.events[:,-1]
+            psds_normalized = np.zeros(psds.shape)
+            for trial in range(psds.shape[0]):
+                psds_normalized[trial, :, :] = 100 * (psds[trial, :, :] / simpson(psds[trial, :, :], freqs)[:,None])
+
+            # Use RFE to select the best features
+            ##  Aggregate data across frequency bands
+            # rfe_data_orig = np.zeros((psds_normalized.shape[0], psds_normalized.shape[1], len(frequency_bands)))
+            # for band in frequency_bands:
+            #     fmin, fmax = frequency_bands[band]
+            #     if fmax not in freqs:
+            #         continue
+            #     band_indices = np.where((freqs >= fmin) & (freqs <= fmax))[0]
+            #     rfe_data_orig[:, :, list(frequency_bands.keys()).index(band)] = np.mean(psds_normalized[:, :, band_indices], axis=2)
+            # rfe_data = rfe_data_orig.reshape(rfe_data_orig.shape[0], -1)
+            ## Alternate: Use more coarse frequency bands
+            rfe_psds, rfe_freqs = mne.time_frequency.psd_array_welch(filtered_data, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=int(target_sfreq/4), n_overlap=int(signal_length/8), n_jobs=10)
+            rfe_psds_normalized = np.zeros(rfe_psds.shape)
+            for trial in range(rfe_psds.shape[0]):
+                rfe_psds_normalized[trial, :, :] = 100 * (rfe_psds[trial, :, :] / simpson(rfe_psds[trial, :, :], rfe_freqs)[:,None])
+            rfe_data = rfe_psds_normalized.reshape(rfe_psds_normalized.shape[0], -1)
+            
+            #%% Extract events and binarize them for better interpretability
+            events_orig = subj_epochs.events[:,-1]
             inverse_event_dict = {v: k for k, v in event_ids.items()}
             events = [inverse_event_dict[event] for event in events_orig]
             events = [0 if event == interested_events[0] else 1 for event in events]
             events = np.array(events)
             
+            #%% Feature selection
             if use_rfe:
-                psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
-            
-            if use_online:
-                X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42, stratify=events)
-                X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
-                X_boost = X_boost.reshape(X_boost.shape[0], X_boost.shape[1], X_boost.shape[2], 1)
-                # Split boost further to augment both the training and testing data
-                X_boost_train, X_boost_test, y_boost_train, y_boost_test = train_test_split(X_boost, y_boost, test_size=0.5, random_state=42, stratify=y_boost)
-                X_train = np.concatenate((X_train, X_boost_train), axis=0)
-                y_train = np.concatenate((y_train, y_boost_train), axis=0)
-                X_boost_test = np.squeeze(X_boost_test)
-                X_test = np.concatenate((X_test, X_boost_test), axis=0)
-                y_test = np.concatenate((y_test, y_boost_test), axis=0)
-                day_train = np.concatenate((day_train, np.ones(X_boost_test.shape[0])))
-                day_test = np.concatenate((day_test, np.ones(X_boost_test.shape[0])))
-                day_val = np.ones(X_val.shape[0])
+                if rfe_method == 'SVC':
+                    estimator = SVC(kernel='linear')
+                elif rfe_method == 'LogisticRegression':
+                    estimator = LogisticRegression(max_iter=10000)
+                elif rfe_method == 'RandomForest':
+                    estimator = RandomForestClassifier(random_state=42)
+                
+                selector = RFE(estimator, n_features_to_select=n_ch, step=1, verbose=0)
+                selector = selector.fit(rfe_data, events)
+                
+                important_indices = np.where(selector.support_)[0]    
+                # important_channels, important_freqs = np.unravel_index(important_indices, psds_normalized.shape[1:])
+                important_channels, important_freqs = np.unravel_index(important_indices, rfe_psds_normalized.shape[1:])
+                important_freqs = freqs[important_freqs]
+                
+                # Extract labels for the important channels and save as a CSV
+                important_channels_df = pd.DataFrame({'chidx': important_channels, 'freq': important_freqs, 'label': subj_labels.loc[important_channels, 'bipolar_channels']}).reset_index(drop=True)
+                important_channels_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels.csv'))
+                
+                aal_regions = []
+                for ch in important_channels:
+                    row = subj_labels.iloc[ch, :]
+                    coordinates = row['mni_x'], row['mni_y'], row['mni_z']
+                    if np.isnan(coordinates).any():
+                        aal_regions.append('Unknown')
+                        continue
+                    aal_regions.append(fuzzyquery_aal.lookup_aal_region(coordinates, fuzzy_dist=10)[1])
+                
+                plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': important_freqs})
+                plotting_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels_frequencies.csv'))
+                # Drop unknown regions
+                plotting_df = plotting_df[plotting_df['aal_region'] != 'Unknown']
+                plot_3d_brain(plotting_df, subj_outdir, f'{rfe_method}_rois', symmetric_cmap=False, cmap='viridis', threshold=0.01)
+                
+                # And also plot the coefficients
+                if rfe_method == 'SVC' or rfe_method == 'LogisticRegression':
+                    plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.coef_[0]})
+                elif rfe_method == 'RandomForest':
+                    plotting_df = pd.DataFrame({'aal_region': aal_regions, 'weight': selector.estimator_.feature_importances_})
+                plotting_df.to_csv(os.path.join(subj_outdir, f'{subj}_rfe_channels_coefs.csv'))
+                # Drop unknown regions
+                plotting_df = plotting_df[plotting_df['aal_region'] != 'Unknown']
+                plot_3d_brain(plotting_df, subj_outdir, f'{rfe_method}_coefs', symmetric_cmap=True, cmap='RdBu_r', threshold=0.01)
+                
+                # training_data = rfe_data[:, important_indices]
+                training_data = psds_normalized[:, important_channels, :]
             else:
-                X_val = psds_normalized_validation
-                X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
-                y_val = events
+                training_data = psds_normalized
+            
+            X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42, stratify=events)
+            X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
+            day_train = np.zeros(X_train.shape[0])
+            day_test = np.zeros(X_test.shape[0])
+            
+            # Add some data from a different day to improve model performance
+            if subj in validation_data.keys():
+                validation_dict = {subj: validation_data[subj]}
+                subj_validation_data = gonogo_dataloader(validation_dict, target_sfreq)
+                subj_validation_epochs = subj_validation_data[subj][interested_events]
+                subj_validation_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
+                
+                # Normalize data
+                subj_validation_epochs_data = subj_validation_epochs.get_data()
+                subj_validation_epochs_data = zscore(subj_validation_epochs_data, axis=2)
+                
+                btr_sos = butter(4, [0.5, 40], btype='bandpass', fs=target_sfreq, output='sos')
+                filtered_data_validation = sosfiltfilt(btr_sos, subj_validation_epochs_data, axis=2)
+                # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data_validation, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
+                psds, freqs = mne.time_frequency.psd_array_welch(filtered_data_validation, sfreq=target_sfreq, fmin=1, fmax=fmax, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10)
+                # Normalize psds by the Simpson integral
+                psds_normalized_validation = np.zeros(psds.shape)
+                for trial in range(psds.shape[0]):
+                    psds_normalized_validation[trial, :, :] = 100 * (psds[trial, :, :] / simpson(psds[trial, :, :], freqs)[:,None])
+                # for trial in range(psds.shape[0]):
+                #     for channel in range(psds.shape[1]):
+                #         psds_normalized_validation[trial, channel, :] = psds[trial, channel, :] / simpson(psds[trial, channel, :], freqs)
+                
+                # Extract events and binarize them for better interpretability
+                events_orig = subj_validation_epochs.events[:,-1]
+                inverse_event_dict = {v: k for k, v in event_ids.items()}
+                events = [inverse_event_dict[event] for event in events_orig]
+                events = [0 if event == interested_events[0] else 1 for event in events]
+                events = np.array(events)
+                
+                if use_rfe:
+                    psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
+                
+                if use_online:
+                    X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42, stratify=events)
+                    X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
+                    X_boost = X_boost.reshape(X_boost.shape[0], X_boost.shape[1], X_boost.shape[2], 1)
+                    # Split boost further to augment both the training and testing data
+                    X_boost_train, X_boost_test, y_boost_train, y_boost_test = train_test_split(X_boost, y_boost, test_size=0.5, random_state=42, stratify=y_boost)
+                    X_train = np.concatenate((X_train, X_boost_train), axis=0)
+                    y_train = np.concatenate((y_train, y_boost_train), axis=0)
+                    X_boost_test = np.squeeze(X_boost_test)
+                    X_test = np.concatenate((X_test, X_boost_test), axis=0)
+                    y_test = np.concatenate((y_test, y_boost_test), axis=0)
+                    day_train = np.concatenate((day_train, np.ones(X_boost_test.shape[0])))
+                    day_test = np.concatenate((day_test, np.ones(X_boost_test.shape[0])))
+                    day_val = np.ones(X_val.shape[0])
+                else:
+                    X_val = psds_normalized_validation
+                    X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
+                    y_val = events
+                    day_val = np.ones(X_val.shape[0])
+            else:
+                print(f'No different day data for {subj}, cannot use online training...')
+                # For simplicity, use the test data as the validation data (results will be redundant)
+                X_val = X_test
+                y_val = y_test
                 day_val = np.ones(X_val.shape[0])
-        else:
-            print(f'No different day data for {subj}, cannot use online training...')
-            # For simplicity, use the test data as the validation data (results will be redundant)
-            X_val = X_test
-            y_val = y_test
-            day_val = np.ones(X_val.shape[0])
-        
-        #%%
-        # Save the training and validation data
-        out_data_dir = os.path.join(subj_outdir, 'data')
-        if not os.path.exists(out_data_dir):
-            os.makedirs(out_data_dir)
-        np.save(os.path.join(out_data_dir, f'{subj}_X_train.npy'), X_train)
-        np.save(os.path.join(out_data_dir, f'{subj}_X_val.npy'), X_val)
-        np.save(os.path.join(out_data_dir, f'{subj}_day_train.npy'), day_train)
-        np.save(os.path.join(out_data_dir, f'{subj}_y_train.npy'), y_train)
-        np.save(os.path.join(out_data_dir, f'{subj}_y_val.npy'), y_val)
-        np.save(os.path.join(out_data_dir, f'{subj}_day_val.npy'), day_val)
-        
-        #%% Train the model
-        optimizer=keras.optimizers.Adam(learning_rate=0.0001)
-        checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
-        num_chans = X_train.shape[1]
-        num_samples = X_train.shape[2]
-        early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
-        model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
-        run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
-        tensorboard_cb = TensorBoard(log_dir=run_logdir)
-        print('*'*50)
-        print(f'\nPoint TensorBoard to:\n{run_logdir}')
-        print('*'*50)
-        # Pause for a bit to allow the user to copy the logdir
-        time.sleep(10)
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
-        model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
-        model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-        # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
-        fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
-        
-        plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
-        plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
-        plt.legend()
-        plt.title(f'{subj} EEGNet PSD model accuracy')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_accuracy.png'))
-        plt.close()
-        # plt.show()
-        
-        plt.plot(fitted_model.history['loss'], color='blue', label='train')
-        plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
-        plt.legend()
-        plt.title(f'{subj} EEGNet PSD model loss')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_loss.png'))
-        plt.close()
-        # plt.show()
-        
-        # Save the model using SavedModel format
-        model.save(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'))
-        # And also in HDF5 format
-        model.save(os.path.join(checkpoint_dir, f'{subj}_gonogo_model.h5'))
-        
-        #%% Test the model
-        # Get model predictions and metrics
-        from keras.models import load_model
-        # model = load_model(os.path.join(checkpoint_dir, f'{subj}_model.h5'), custom_objects={'precision_metric': precision_metric})
-        model = load_model(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'), custom_objects={'precision_metric': precision_metric})
-        # y_pred_probs = model.predict(X_test)
-        y_pred_probs = model.predict([X_test, day_test])
-        predictions_df = pd.DataFrame(y_pred_probs)
-        predictions_df['truth'] = y_test
-        predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
-        auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
-        auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
-        precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
-        # Find the threshold that maximizes the F1 score
-        f1_scores = 2 * (precision * recall) / (precision + recall)
-        optimal_threshold = thresholds[np.argmax(f1_scores)]
-        fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
-        confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
-        
-        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
-        disp.plot(cmap='Blues')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_confmat.png'))
-        plt.close()
-        
-        # Plot ROC and PRC curves
-        plt.figure()
-        plt.plot(fpr, tpr)
-        plt.plot([0, 1], [0, 1], linestyle='--')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'{subj} ROC curve')
-        plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_roc.png'))
-        plt.close()
-        # plt.show()
-        
-        plt.figure()
-        plt.plot(recall, precision)
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.title(f'{subj} Precision-Recall curve')
-        plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-        noskill = len(y_test[y_test==1]) / len(y_test)
-        plt.axhline(noskill, linestyle='--', color='red')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_prc.png'))
-        plt.close()
-        # plt.show()
-        
-        #%%
-        # Validate on data from a different day
-        # if subj in validation_data.keys():
-            # validation_dict = {subj: validation_data[subj]}
-            # subj_validation_data = gonogo_dataloader(validation_dict, target_sfreq)
-            # subj_validation_epochs = subj_validation_data[subj][interested_events]
-            # subj_validation_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
             
-            # # Normalize data
-            # subj_validation_epochs_data = subj_validation_epochs.get_data()
-            # subj_validation_epochs_data = zscore(subj_validation_epochs_data, axis=2)
+            #%%
+            # Save the training and validation data
+            out_data_dir = os.path.join(subj_outdir, 'data')
+            if not os.path.exists(out_data_dir):
+                os.makedirs(out_data_dir)
+            np.save(os.path.join(out_data_dir, f'{subj}_X_train.npy'), X_train)
+            np.save(os.path.join(out_data_dir, f'{subj}_X_val.npy'), X_val)
+            np.save(os.path.join(out_data_dir, f'{subj}_day_train.npy'), day_train)
+            np.save(os.path.join(out_data_dir, f'{subj}_y_train.npy'), y_train)
+            np.save(os.path.join(out_data_dir, f'{subj}_y_val.npy'), y_val)
+            np.save(os.path.join(out_data_dir, f'{subj}_day_val.npy'), day_val)
             
-            # btr_sos = butter(4, [0.5, 40], btype='bandpass', fs=target_sfreq, output='sos')
-            # filtered_data_validation = sosfiltfilt(btr_sos, subj_validation_epochs_data, axis=2)
-            # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data_validation, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
-            # # Normalize psds by the Simpson integral
-            # psds_normalized_validation = np.zeros(psds.shape)
-            # for trial in range(psds.shape[0]):
-            #     for channel in range(psds.shape[1]):
-            #         psds_normalized_validation[trial, channel, :] = psds[trial, channel, :] / simpson(psds[trial, channel, :], freqs)
+            #%% Train the model
+            optimizer=keras.optimizers.Adam(learning_rate=0.0001)
+            checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
+            if not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
+            num_chans = X_train.shape[1]
+            num_samples = X_train.shape[2]
+            early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
+            model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
+            run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
+            tensorboard_cb = TensorBoard(log_dir=run_logdir)
+            print('*'*50)
+            print(f'\nPoint TensorBoard to:\n{run_logdir}')
+            print('*'*50)
+            # Pause for a bit to allow the user to copy the logdir
+            time.sleep(10)
+            reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
+            model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
+            model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+            # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+            fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: tp_class_weight})
             
-            # # Extract events and binarize them for better interpretability
-            # events_orig = subj_validation_epochs.events[:,-1]
-            # inverse_event_dict = {v: k for k, v in event_ids.items()}
-            # events = [inverse_event_dict[event] for event in events_orig]
-            # events = [0 if event == interested_events[0] else 1 for event in events]
-            # events = np.array(events)
+            plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
+            plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
+            plt.legend()
+            plt.title(f'{subj} EEGNet PSD model accuracy')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_accuracy.png'))
+            plt.close()
+            # plt.show()
             
-            # if use_rfe:
-            #     psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
+            plt.plot(fitted_model.history['loss'], color='blue', label='train')
+            plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
+            plt.legend()
+            plt.title(f'{subj} EEGNet PSD model loss')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_loss.png'))
+            plt.close()
+            # plt.show()
             
-            # X_val, y_val = psds_normalized_validation, events
+            # Save the model using SavedModel format
+            model.save(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'))
+            # And also in HDF5 format
+            model.save(os.path.join(checkpoint_dir, f'{subj}_gonogo_model.h5'))
             
-            # y_pred_probs_val = model.predict(X_val)
-        y_pred_probs_val = model.predict([X_val, day_val])
-        predictions_val_df = pd.DataFrame(y_pred_probs_val)
-        predictions_val_df['truth'] = y_val
-        predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))
-        auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
-        auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
-        precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
-        fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
-        val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
-        
-        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
-        disp.plot(cmap='Blues')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_confmat_val.png'))
-        plt.close()
-        
-        # Plot ROC and PRC curves
-        plt.figure()
-        plt.plot(fpr_val, tpr_val)
-        plt.plot([0, 1], [0, 1], linestyle='--')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'{subj} ROC curve')
-        plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
-        plt.close()
-        # plt.show()
-        
-        plt.figure()
-        plt.plot(recall_val, precision_val)
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.title(f'{subj} Precision-Recall curve')
-        plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-        noskill = len(y_val[y_val==1]) / len(y_val)
-        plt.axhline(noskill, linestyle='--', color='red')
-        plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
-        plt.close()
-        # plt.show()
+            #%% Test the model
+            # Get model predictions and metrics
+            from keras.models import load_model
+            # model = load_model(os.path.join(checkpoint_dir, f'{subj}_model.h5'), custom_objects={'precision_metric': precision_metric})
+            model = load_model(os.path.join(checkpoint_dir, f'{subj}_gonogo_model'), custom_objects={'precision_metric': precision_metric})
+            # y_pred_probs = model.predict(X_test)
+            y_pred_probs = model.predict([X_test, day_test])
+            predictions_df = pd.DataFrame(y_pred_probs)
+            predictions_df['truth'] = y_test
+            predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
+            auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
+            auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
+            precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
+            # Find the threshold that maximizes the F1 score
+            f1_scores = 2 * (precision * recall) / (precision + recall)
+            optimal_threshold = thresholds[np.argmax(f1_scores)]
+            fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
+            confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
+            
+            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
+            disp.plot(cmap='Blues')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_confmat.png'))
+            plt.close()
+            
+            # Plot ROC and PRC curves
+            plt.figure()
+            plt.plot(fpr, tpr)
+            plt.plot([0, 1], [0, 1], linestyle='--')
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(f'{subj} ROC curve')
+            plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_roc.png'))
+            plt.close()
+            # plt.show()
+            
+            plt.figure()
+            plt.plot(recall, precision)
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.title(f'{subj} Precision-Recall curve')
+            plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+            noskill = len(y_test[y_test==1]) / len(y_test)
+            plt.axhline(noskill, linestyle='--', color='red')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_prc.png'))
+            plt.close()
+            # plt.show()
+            
+            #%%
+            # Validate on data from a different day
+            # if subj in validation_data.keys():
+                # validation_dict = {subj: validation_data[subj]}
+                # subj_validation_data = gonogo_dataloader(validation_dict, target_sfreq)
+                # subj_validation_epochs = subj_validation_data[subj][interested_events]
+                # subj_validation_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
+                
+                # # Normalize data
+                # subj_validation_epochs_data = subj_validation_epochs.get_data()
+                # subj_validation_epochs_data = zscore(subj_validation_epochs_data, axis=2)
+                
+                # btr_sos = butter(4, [0.5, 40], btype='bandpass', fs=target_sfreq, output='sos')
+                # filtered_data_validation = sosfiltfilt(btr_sos, subj_validation_epochs_data, axis=2)
+                # psds, freqs = mne.time_frequency.psd_array_welch(filtered_data_validation, sfreq=target_sfreq, fmin=0.5, fmax=40, n_fft=int(target_sfreq/4), n_overlap=int(target_sfreq/8), n_jobs=10)
+                # # Normalize psds by the Simpson integral
+                # psds_normalized_validation = np.zeros(psds.shape)
+                # for trial in range(psds.shape[0]):
+                #     for channel in range(psds.shape[1]):
+                #         psds_normalized_validation[trial, channel, :] = psds[trial, channel, :] / simpson(psds[trial, channel, :], freqs)
+                
+                # # Extract events and binarize them for better interpretability
+                # events_orig = subj_validation_epochs.events[:,-1]
+                # inverse_event_dict = {v: k for k, v in event_ids.items()}
+                # events = [inverse_event_dict[event] for event in events_orig]
+                # events = [0 if event == interested_events[0] else 1 for event in events]
+                # events = np.array(events)
+                
+                # if use_rfe:
+                #     psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
+                
+                # X_val, y_val = psds_normalized_validation, events
+                
+                # y_pred_probs_val = model.predict(X_val)
+            y_pred_probs_val = model.predict([X_val, day_val])
+            predictions_val_df = pd.DataFrame(y_pred_probs_val)
+            predictions_val_df['truth'] = y_val
+            predictions_val_df.to_csv(os.path.join(subj_outdir, f'{subj}_validation_predictions.csv'))
+            auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
+            auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
+            precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
+            fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
+            val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
+            
+            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
+            disp.plot(cmap='Blues')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_confmat_val.png'))
+            plt.close()
+            
+            # Plot ROC and PRC curves
+            plt.figure()
+            plt.plot(fpr_val, tpr_val)
+            plt.plot([0, 1], [0, 1], linestyle='--')
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(f'{subj} ROC curve')
+            plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
+            plt.close()
+            # plt.show()
+            
+            plt.figure()
+            plt.plot(recall_val, precision_val)
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.title(f'{subj} Precision-Recall curve')
+            plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+            noskill = len(y_val[y_val==1]) / len(y_val)
+            plt.axhline(noskill, linestyle='--', color='red')
+            plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
+            plt.close()
+            # plt.show()
         
     
 
@@ -883,111 +887,111 @@ for idx, subj in enumerate(subjects):
 # TEMPORARY CODE FOR TESTING
 #######################################################################################################################################
 
-# Use a temporary directory
-subj_outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/tmp'
+# # Use a temporary directory
+# subj_outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/tmp'
 
-optimizer=keras.optimizers.Adam(learning_rate=0.0001)
-checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
-if not os.path.exists(checkpoint_dir):
-    os.makedirs(checkpoint_dir)
-num_chans = X_train.shape[1]
-num_samples = X_train.shape[2]
-early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
-model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
-run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
-tensorboard_cb = TensorBoard(log_dir=run_logdir)
-print('*'*50)
-print(f'\nPoint TensorBoard to:\n{run_logdir}')
-print('*'*50)
-# Pause for a bit to allow the user to copy the logdir
-# time.sleep(10)
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
-model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
-model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 4.})
+# optimizer=keras.optimizers.Adam(learning_rate=0.0001)
+# checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
+# if not os.path.exists(checkpoint_dir):
+#     os.makedirs(checkpoint_dir)
+# num_chans = X_train.shape[1]
+# num_samples = X_train.shape[2]
+# early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
+# model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
+# run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
+# tensorboard_cb = TensorBoard(log_dir=run_logdir)
+# print('*'*50)
+# print(f'\nPoint TensorBoard to:\n{run_logdir}')
+# print('*'*50)
+# # Pause for a bit to allow the user to copy the logdir
+# # time.sleep(10)
+# reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
+# model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
+# model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+# fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 4.})
 
-plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
-plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
-plt.legend()
-plt.title(f'{subj} EEGNet PSD model accuracy')
-plt.show()
+# plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
+# plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
+# plt.legend()
+# plt.title(f'{subj} EEGNet PSD model accuracy')
+# plt.show()
 
-plt.plot(fitted_model.history['loss'], color='blue', label='train')
-plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
-plt.legend()
-plt.title(f'{subj} EEGNet PSD model loss')
-plt.show()
+# plt.plot(fitted_model.history['loss'], color='blue', label='train')
+# plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
+# plt.legend()
+# plt.title(f'{subj} EEGNet PSD model loss')
+# plt.show()
 
-# Test the model
+# # Test the model
 
-y_pred_probs = model.predict([X_test, day_test])
-predictions_df = pd.DataFrame(y_pred_probs)
-predictions_df['truth'] = y_test
-predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
-auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
-auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
-precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
-# Find the threshold that maximizes the F1 score
-f1_scores = 2 * (precision * recall) / (precision + recall)
-optimal_threshold = thresholds[np.argmax(f1_scores)]
-fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
-confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
+# y_pred_probs = model.predict([X_test, day_test])
+# predictions_df = pd.DataFrame(y_pred_probs)
+# predictions_df['truth'] = y_test
+# predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
+# auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
+# auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
+# precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
+# # Find the threshold that maximizes the F1 score
+# f1_scores = 2 * (precision * recall) / (precision + recall)
+# optimal_threshold = thresholds[np.argmax(f1_scores)]
+# fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
+# confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
 
-disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
-disp.plot(cmap='Blues')
+# disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
+# disp.plot(cmap='Blues')
 
-plt.figure()
-plt.plot(fpr, tpr)
-plt.plot([0, 1], [0, 1], linestyle='--')
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title(f'{subj} ROC curve')
-plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
-plt.show()
+# plt.figure()
+# plt.plot(fpr, tpr)
+# plt.plot([0, 1], [0, 1], linestyle='--')
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title(f'{subj} ROC curve')
+# plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
+# plt.show()
 
-plt.figure()
-plt.plot(recall, precision)
-plt.xlabel('Recall')
-plt.ylabel('Precision')
-plt.title(f'{subj} Precision-Recall curve')
-plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-noskill = len(y_test[y_test==1]) / len(y_test)
-plt.axhline(noskill, linestyle='--', color='red')
-plt.show()
+# plt.figure()
+# plt.plot(recall, precision)
+# plt.xlabel('Recall')
+# plt.ylabel('Precision')
+# plt.title(f'{subj} Precision-Recall curve')
+# plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+# noskill = len(y_test[y_test==1]) / len(y_test)
+# plt.axhline(noskill, linestyle='--', color='red')
+# plt.show()
 
-# Validate on data from a different day
-y_pred_probs_val = model.predict([X_val, day_val])
-predictions_val_df = pd.DataFrame(y_pred_probs_val)
-predictions_val_df['truth'] = y_val
-auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
-auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
-precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
-fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
-val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
+# # Validate on data from a different day
+# y_pred_probs_val = model.predict([X_val, day_val])
+# predictions_val_df = pd.DataFrame(y_pred_probs_val)
+# predictions_val_df['truth'] = y_val
+# auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
+# auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
+# precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
+# fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
+# val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
 
-disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
-disp.plot(cmap='Blues')
+# disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
+# disp.plot(cmap='Blues')
 
-# Plot ROC and PRC curves
-plt.figure()
-plt.plot(fpr_val, tpr_val)
-plt.plot([0, 1], [0, 1], linestyle='--')
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title(f'{subj} ROC curve')
-plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
-# plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
-# plt.close()
-plt.show()
+# # Plot ROC and PRC curves
+# plt.figure()
+# plt.plot(fpr_val, tpr_val)
+# plt.plot([0, 1], [0, 1], linestyle='--')
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title(f'{subj} ROC curve')
+# plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
+# # plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
+# # plt.close()
+# plt.show()
 
-plt.figure()
-plt.plot(recall_val, precision_val)
-plt.xlabel('Recall')
-plt.ylabel('Precision')
-plt.title(f'{subj} Precision-Recall curve')
-plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-noskill = len(y_val[y_val==1]) / len(y_val)
-plt.axhline(noskill, linestyle='--', color='red')
-# plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
-# plt.close()
-plt.show()
+# plt.figure()
+# plt.plot(recall_val, precision_val)
+# plt.xlabel('Recall')
+# plt.ylabel('Precision')
+# plt.title(f'{subj} Precision-Recall curve')
+# plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+# noskill = len(y_val[y_val==1]) / len(y_val)
+# plt.axhline(noskill, linestyle='--', color='red')
+# # plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
+# # plt.close()
+# plt.show()
