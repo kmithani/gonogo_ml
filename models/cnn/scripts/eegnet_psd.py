@@ -14,14 +14,14 @@ parser.add_argument('--online', action='store_true', help='Whether or not to use
 parser.add_argument('--fmax', type=int, help='The maximum frequency to use for the PSD estimates', nargs='?')
 args = parser.parse_args()
 
-# For debugging, assign the arguments manually
-class Args:
-    def __init__(self):
-        self.use_rfe = True
-        self.rfe_method = 'LogisticRegression'
-        self.online = True
-        self.fmax = 40
-args = Args()
+# # For debugging, assign the arguments manually
+# class Args:
+#     def __init__(self):
+#         self.use_rfe = False
+#         self.rfe_method = 'LogisticRegression'
+#         self.online = True
+#         self.fmax = 40
+# args = Args()
 
 # General imports
 import os
@@ -166,7 +166,8 @@ validation_data = {
     'SEEG-SK-66': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-67': {'day2': ['GoNogo_py']},
     'SEEG-SK-68': {'day2': ['GoNogo_py']},
-    'SEEG-SK-69': {'day2': ['GoNogo_py']}
+    'SEEG-SK-69': {'day2': ['GoNogo_py']},
+    'SEEG-SK-70': {'day2': ['GoNogo_py']}
 }
 
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
@@ -718,7 +719,7 @@ for idx, subj in enumerate(subjects):
         model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
         model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
         # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
-        fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+        fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 4.})
         
         plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
         plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
@@ -873,111 +874,111 @@ for idx, subj in enumerate(subjects):
 # TEMPORARY CODE FOR TESTING
 #######################################################################################################################################
 
-# # Use a temporary directory
-# subj_outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/tmp'
+# Use a temporary directory
+subj_outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/tmp'
 
-# optimizer=keras.optimizers.Adam(learning_rate=0.0001)
-# checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
-# if not os.path.exists(checkpoint_dir):
-#     os.makedirs(checkpoint_dir)
-# num_chans = X_train.shape[1]
-# num_samples = X_train.shape[2]
-# early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
-# model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
-# run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
-# tensorboard_cb = TensorBoard(log_dir=run_logdir)
-# print('*'*50)
-# print(f'\nPoint TensorBoard to:\n{run_logdir}')
-# print('*'*50)
-# # Pause for a bit to allow the user to copy the logdir
-# # time.sleep(10)
-# reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
-# model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
-# model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-# fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+optimizer=keras.optimizers.Adam(learning_rate=0.0001)
+checkpoint_dir = os.path.join(subj_outdir, 'checkpoints')
+if not os.path.exists(checkpoint_dir):
+    os.makedirs(checkpoint_dir)
+num_chans = X_train.shape[1]
+num_samples = X_train.shape[2]
+early_stopping = EarlyStopping(monitor='val_loss', patience=100, verbose=1, mode='min', restore_best_weights=True)
+model_checkpoint = ModelCheckpoint(os.path.join(checkpoint_dir, f'{subj}_model'), monitor='val_loss', verbose=1, save_best_only=True)
+run_logdir = get_run_logdir(os.path.join(subj_outdir, 'logs'))
+tensorboard_cb = TensorBoard(log_dir=run_logdir)
+print('*'*50)
+print(f'\nPoint TensorBoard to:\n{run_logdir}')
+print('*'*50)
+# Pause for a bit to allow the user to copy the logdir
+# time.sleep(10)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
+model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
+model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
 
-# plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
-# plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
-# plt.legend()
-# plt.title(f'{subj} EEGNet PSD model accuracy')
-# plt.show()
+plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
+plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
+plt.legend()
+plt.title(f'{subj} EEGNet PSD model accuracy')
+plt.show()
 
-# plt.plot(fitted_model.history['loss'], color='blue', label='train')
-# plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
-# plt.legend()
-# plt.title(f'{subj} EEGNet PSD model loss')
-# plt.show()
+plt.plot(fitted_model.history['loss'], color='blue', label='train')
+plt.plot(fitted_model.history['val_loss'], color='orange', label='test')
+plt.legend()
+plt.title(f'{subj} EEGNet PSD model loss')
+plt.show()
 
-# # Test the model
+# Test the model
 
-# y_pred_probs = model.predict([X_test, day_test])
-# predictions_df = pd.DataFrame(y_pred_probs)
-# predictions_df['truth'] = y_test
-# predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
-# auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
-# auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
-# precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
-# # Find the threshold that maximizes the F1 score
-# f1_scores = 2 * (precision * recall) / (precision + recall)
-# optimal_threshold = thresholds[np.argmax(f1_scores)]
-# fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
-# confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
+y_pred_probs = model.predict([X_test, day_test])
+predictions_df = pd.DataFrame(y_pred_probs)
+predictions_df['truth'] = y_test
+predictions_df.to_csv(os.path.join(subj_outdir, f'{subj}_predictions.csv'))
+auc_roc = metrics.roc_auc_score(y_test, y_pred_probs)
+auc_prc = metrics.average_precision_score(y_test, y_pred_probs)
+precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
+# Find the threshold that maximizes the F1 score
+f1_scores = 2 * (precision * recall) / (precision + recall)
+optimal_threshold = thresholds[np.argmax(f1_scores)]
+fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
+confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
 
-# disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
-# disp.plot(cmap='Blues')
+disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
+disp.plot(cmap='Blues')
 
-# plt.figure()
-# plt.plot(fpr, tpr)
-# plt.plot([0, 1], [0, 1], linestyle='--')
-# plt.xlabel('False Positive Rate')
-# plt.ylabel('True Positive Rate')
-# plt.title(f'{subj} ROC curve')
-# plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
-# plt.show()
+plt.figure()
+plt.plot(fpr, tpr)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title(f'{subj} ROC curve')
+plt.text(0.85, 0.05, f'AUC: {auc_roc:.2f}')
+plt.show()
 
-# plt.figure()
-# plt.plot(recall, precision)
-# plt.xlabel('Recall')
-# plt.ylabel('Precision')
-# plt.title(f'{subj} Precision-Recall curve')
-# plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-# noskill = len(y_test[y_test==1]) / len(y_test)
-# plt.axhline(noskill, linestyle='--', color='red')
-# plt.show()
+plt.figure()
+plt.plot(recall, precision)
+plt.xlabel('Recall')
+plt.ylabel('Precision')
+plt.title(f'{subj} Precision-Recall curve')
+plt.text(0.95, 0.95, f'AUPRC = {(auc_prc):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+noskill = len(y_test[y_test==1]) / len(y_test)
+plt.axhline(noskill, linestyle='--', color='red')
+plt.show()
 
-# # Validate on data from a different day
-# y_pred_probs_val = model.predict([X_val, day_val])
-# predictions_val_df = pd.DataFrame(y_pred_probs_val)
-# predictions_val_df['truth'] = y_val
-# auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
-# auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
-# precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
-# fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
-# val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
+# Validate on data from a different day
+y_pred_probs_val = model.predict([X_val, day_val])
+predictions_val_df = pd.DataFrame(y_pred_probs_val)
+predictions_val_df['truth'] = y_val
+auc_roc_val = metrics.roc_auc_score(y_val, y_pred_probs_val)
+auc_prc_val = metrics.average_precision_score(y_val, y_pred_probs_val)
+precision_val, recall_val, _ = metrics.precision_recall_curve(y_val, y_pred_probs_val)
+fpr_val, tpr_val, _ = metrics.roc_curve(y_val, y_pred_probs_val)
+val_confusion_matrix = metrics.confusion_matrix(y_val, y_pred_probs_val > optimal_threshold)
 
-# disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
-# disp.plot(cmap='Blues')
+disp = metrics.ConfusionMatrixDisplay(confusion_matrix=val_confusion_matrix)
+disp.plot(cmap='Blues')
 
-# # Plot ROC and PRC curves
-# plt.figure()
-# plt.plot(fpr_val, tpr_val)
-# plt.plot([0, 1], [0, 1], linestyle='--')
-# plt.xlabel('False Positive Rate')
-# plt.ylabel('True Positive Rate')
-# plt.title(f'{subj} ROC curve')
-# plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
-# # plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
-# # plt.close()
-# plt.show()
+# Plot ROC and PRC curves
+plt.figure()
+plt.plot(fpr_val, tpr_val)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title(f'{subj} ROC curve')
+plt.text(0.85, 0.05, f'AUC: {auc_roc_val:.2f}')
+# plt.savefig(os.path.join(subj_outdir, f'{subj}_roc_val.png'))
+# plt.close()
+plt.show()
 
-# plt.figure()
-# plt.plot(recall_val, precision_val)
-# plt.xlabel('Recall')
-# plt.ylabel('Precision')
-# plt.title(f'{subj} Precision-Recall curve')
-# plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
-# noskill = len(y_val[y_val==1]) / len(y_val)
-# plt.axhline(noskill, linestyle='--', color='red')
-# # plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
-# # plt.close()
-# plt.show()
+plt.figure()
+plt.plot(recall_val, precision_val)
+plt.xlabel('Recall')
+plt.ylabel('Precision')
+plt.title(f'{subj} Precision-Recall curve')
+plt.text(0.95, 0.95, f'AUPRC = {(auc_prc_val):.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+noskill = len(y_val[y_val==1]) / len(y_val)
+plt.axhline(noskill, linestyle='--', color='red')
+# plt.savefig(os.path.join(subj_outdir, f'{subj}_prc_val.png'))
+# plt.close()
+plt.show()
