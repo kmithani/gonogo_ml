@@ -15,13 +15,13 @@ parser.add_argument('--fmax', type=int, help='The maximum frequency to use for t
 args = parser.parse_args()
 
 # # For debugging, assign the arguments manually
-# class Args:
-#     def __init__(self):
-#         self.use_rfe = False
-#         self.rfe_method = 'LogisticRegression'
-#         self.online = True
-#         self.fmax = 40
-# args = Args()
+class Args:
+    def __init__(self):
+        self.use_rfe = False
+        self.rfe_method = 'LogisticRegression'
+        self.online = True
+        self.fmax = 40
+args = Args()
 
 # General imports
 import os
@@ -675,9 +675,11 @@ for idx, subj in enumerate(subjects):
                 X_boost_train, X_boost_test, y_boost_train, y_boost_test = train_test_split(X_boost, y_boost, test_size=0.5, random_state=42, stratify=y_boost)
                 X_train = np.concatenate((X_train, X_boost_train), axis=0)
                 y_train = np.concatenate((y_train, y_boost_train), axis=0)
+                X_boost_test = np.squeeze(X_boost_test)
                 X_test = np.concatenate((X_test, X_boost_test), axis=0)
                 y_test = np.concatenate((y_test, y_boost_test), axis=0)
-                day_train = np.concatenate((day_train, np.ones(X_boost.shape[0])))
+                day_train = np.concatenate((day_train, np.ones(X_boost_test.shape[0])))
+                day_test = np.concatenate((day_test, np.ones(X_boost_test.shape[0])))
                 day_val = np.ones(X_val.shape[0])
             else:
                 X_val = psds_normalized_validation
@@ -723,7 +725,7 @@ for idx, subj in enumerate(subjects):
         model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
         model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
         # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
-        fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 4.})
+        fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
         
         plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
         plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
@@ -899,7 +901,7 @@ print('*'*50)
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
 model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
 model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
+fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 4.})
 
 plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
 plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
