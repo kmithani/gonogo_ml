@@ -671,8 +671,12 @@ for idx, subj in enumerate(subjects):
                 X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42, stratify=events)
                 X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
                 X_boost = X_boost.reshape(X_boost.shape[0], X_boost.shape[1], X_boost.shape[2], 1)
-                X_train = np.concatenate((X_train, X_boost), axis=0)
-                y_train = np.concatenate((y_train, y_boost), axis=0)
+                # Split boost further to augment both the training and testing data
+                X_boost_train, X_boost_test, y_boost_train, y_boost_test = train_test_split(X_boost, y_boost, test_size=0.5, random_state=42, stratify=y_boost)
+                X_train = np.concatenate((X_train, X_boost_train), axis=0)
+                y_train = np.concatenate((y_train, y_boost_train), axis=0)
+                X_test = np.concatenate((X_test, X_boost_test), axis=0)
+                y_test = np.concatenate((y_test, y_boost_test), axis=0)
                 day_train = np.concatenate((day_train, np.ones(X_boost.shape[0])))
                 day_val = np.ones(X_val.shape[0])
             else:
