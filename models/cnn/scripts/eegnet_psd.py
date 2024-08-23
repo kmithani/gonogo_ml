@@ -16,14 +16,14 @@ parser.add_argument('--use_logreg', action='store_true', help='Use logistic regr
 args = parser.parse_args()
 
 # # For debugging, assign the arguments manually
-class Args:
-    def __init__(self):
-        self.use_rfe = False
-        self.rfe_method = 'LogisticRegression'
-        self.online = True
-        self.fmax = 40
-        self.use_logreg = True
-args = Args()
+# class Args:
+#     def __init__(self):
+#         self.use_rfe = False
+#         self.rfe_method = 'LogisticRegression'
+#         self.online = True
+#         self.fmax = 40
+#         self.use_logreg = True
+# args = Args()
 
 # General imports
 import os
