@@ -95,7 +95,7 @@ outdir = f'/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_{f
 labels_dir = '/d/gmi/1/karimmithani/seeg/labels'
 cles_array_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/cles'
 n_chans = [10, 15, 20, 25] # Hyperparameter for number of channels when using RFE
-tp_class_weights = ['proportional'] # Hyperparameter for the "True Positive" (i.e. more rare in this instance) class weight
+tp_class_weights = [2, 4, 6, 8, 'proportional'] # Hyperparameter for the "True Positive" (i.e. more rare in this instance) class weight
 
 if args.online:
     print()
@@ -212,7 +212,7 @@ random.seed(42)
 #######################################################################################################################################
 
 
-def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=processed_dir):
+def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=processed_dir, drop_bad_channels=True):
     
     '''
     Load SEEG data for GoNogo task from epochs
@@ -232,22 +232,31 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
     '''
     
     subjects_epochs = {}
+    bad_channels = []
     
     for subj in subjects:
         epoch_files = []
         for day in subjects[subj]:
             for task in subjects[subj][day]:
                 epoch_files.append(glob.glob(os.path.join(processed_dir, subj, day, task, f'*{montage}*.fif')))
+                specific_bad_channels = pd.read_csv(os.path.join(processed_dir, subj, day, task, f'{subj}_bad_channels.csv'), header=None)
+                bad_channels.append(specific_bad_channels[0].values)
         epoch_files = [item for sublist in epoch_files for item in sublist]
         epochs = mne.concatenate_epochs([mne.read_epochs(f) for f in epoch_files])
         
-        # Obtain and drop bad channels
-        bad_channels_path = os.path.join(processed_dir, subj, f'{subj}_bad_channels.csv')
-        if os.path.exists(bad_channels_path):
-            bad_channels = pd.read_csv(bad_channels_path, header=None)
-            bad_channels.columns = ['bad_channels']
-            print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels["bad_channels"].values}')
-            epochs.drop_channels(bad_channels['bad_channels'].values)
+        bad_channels = np.unique(np.concatenate(bad_channels))
+        
+        if drop_bad_channels:
+            print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels}')
+            epochs.drop_channels(bad_channels)
+        
+        # # Obtain and drop bad channels
+        # bad_channels_path = os.path.join(processed_dir, subj, f'{subj}_bad_channels.csv')
+        # if os.path.exists(bad_channels_path):
+        #     bad_channels = pd.read_csv(bad_channels_path, header=None)
+        #     bad_channels.columns = ['bad_channels']
+        #     print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels["bad_channels"].values}')
+        #     epochs.drop_channels(bad_channels['bad_channels'].values)
         
         # # Decimate epochs
         # decim_factor = int(epochs.info['sfreq'] / target_sfreq)
@@ -260,8 +269,21 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
         # Clear memory
         del epochs
         
-    return subjects_epochs
+    return subjects_epochs, bad_channels
 
+
+def identify_bad_channels(raw_data, ch_names, chs, threshold):
+    '''
+    A function to identify potentially artefactual channels based on a variance threshold.
+    
+    '''
+    
+    data = raw_data.pick(ch_names).get_data()
+    variances = np.var(data, axis=1)
+    variances = stats.zscore(variances)
+    bad_channels = chs.loc[variances > threshold]['Label']
+    
+    return bad_channels
 
 def detect_spikes(timeseries, fs, filt=(25, 80), thresh=5, mindur=0.05, maxdur=0.2):
     '''
@@ -516,7 +538,7 @@ for idx, subj in enumerate(subjects):
                 os.makedirs(subj_outdir)
                     
             subj_dict = {subj: subjects[subj]} # Done this way to allow the data loader to work with a single subject
-            subj_epochs = gonogo_dataloader(subj_dict, target_sfreq)
+            subj_epochs, subj_bad_channels = gonogo_dataloader(subj_dict, target_sfreq)
             subj_epochs = subj_epochs[subj][interested_events]
             event_ids = subj_epochs.event_id
             
@@ -533,7 +555,7 @@ for idx, subj in enumerate(subjects):
                 continue
             
             # Detect spikes
-            nonresampled_epochs = gonogo_dataloader(subj_dict, 2048)[subj][interested_events]
+            nonresampled_epochs = gonogo_dataloader(subj_dict, 2048, drop_bad_channels=False)[0][subj][interested_events]
             epochs_array = nonresampled_epochs.get_data()
             spike_trials = []
             spike_channels = []
@@ -665,6 +687,17 @@ for idx, subj in enumerate(subjects):
                 top_channels = channel_performance.head(n_ch)['channel'].values
                 top_channel_indices = np.unravel_index([subj_epochs.ch_names.index(ch) for ch in top_channels], subj_epochs.get_data(copy=True).shape[1])[0]
                 
+                aal_regions = []
+                for ch in top_channels:
+                    row = subj_labels[subj_labels['bipolar_channels'] == ch].iloc[0]
+                    coordinates = float(row['mni_x']), float(row['mni_y']), float(row['mni_z'])
+                    if np.isnan(coordinates).any():
+                        aal_regions.append('Unknown')
+                        continue
+                    aal_regions.append(fuzzyquery_aal.lookup_aal_region(coordinates, fuzzy_dist=10)[1])
+                aal_df = pd.DataFrame({'channel': top_channels, 'aal_region': aal_regions})
+                aal_df.to_csv(os.path.join(subj_outdir, f'{subj}_top_channels_aal.csv'))
+                
                 training_data = psds_normalized[:, top_channel_indices, :]
             else:
                 training_data = psds_normalized
@@ -730,8 +763,9 @@ for idx, subj in enumerate(subjects):
             # Add some data from a different day to improve model performance
             if subj in validation_data.keys():
                 validation_dict = {subj: validation_data[subj]}
-                subj_validation_data = gonogo_dataloader(validation_dict, target_sfreq)
+                subj_validation_data, _ = gonogo_dataloader(validation_dict, target_sfreq, drop_bad_channels=False)
                 subj_validation_epochs = subj_validation_data[subj][interested_events]
+                subj_validation_epochs.drop_channels(subj_bad_channels)
                 subj_validation_epochs.crop(tmin=interested_timeperiod[0], tmax=interested_timeperiod[1])
                 
                 # Normalize data
