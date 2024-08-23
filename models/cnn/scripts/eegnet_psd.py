@@ -12,16 +12,18 @@ parser.add_argument('--use_rfe', action='store_true', help='Whether or not to us
 parser.add_argument('--rfe_method', type=str, choices=["SVC", "LogisticRegression", "RandomForest"], help='The type of RFE to use. Options are "SVC" or "LogisticRegression"', nargs='?')
 parser.add_argument('--online', action='store_true', help='Whether or not to use data from a different day to improve model performance')
 parser.add_argument('--fmax', type=int, help='The maximum frequency to use for the PSD estimates', nargs='?')
+parser.add_argument('--use_logreg', action='store_true', help='Use logistic regression for feature extraction (separate from RFE)')
 args = parser.parse_args()
 
 # # For debugging, assign the arguments manually
-# class Args:
-#     def __init__(self):
-#         self.use_rfe = False
-#         self.rfe_method = 'LogisticRegression'
-#         self.online = True
-#         self.fmax = 40
-# args = Args()
+class Args:
+    def __init__(self):
+        self.use_rfe = False
+        self.rfe_method = 'LogisticRegression'
+        self.online = True
+        self.fmax = 40
+        self.use_logreg = True
+args = Args()
 
 # General imports
 import os
@@ -61,6 +63,7 @@ from sklearn import metrics
 from sklearn.feature_selection import RFE
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, auc, f1_score, confusion_matrix, ConfusionMatrixDisplay, average_precision_score
 
 # Neuroimaging libraries
 import nibabel as nib
@@ -92,7 +95,7 @@ outdir = f'/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_{f
 labels_dir = '/d/gmi/1/karimmithani/seeg/labels'
 cles_array_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/cles'
 n_chans = [10, 15, 20, 25] # Hyperparameter for number of channels when using RFE
-tp_class_weights = [2, 4, 6, 8] # Hyperparameter for class weights
+tp_class_weights = ['proportional'] # Hyperparameter for the "True Positive" (i.e. more rare in this instance) class weight
 
 if args.online:
     print()
@@ -129,10 +132,21 @@ if args.use_rfe:
 else:
     use_rfe = False
     
-if use_rfe:
+if args.use_logreg:
+    print()
+    print('*'*50)
+    print('Using logistic regression for feature extraction')
+    print('*'*50)
+    outdir = os.path.join(outdir, 'using_logreg')
+    use_logreg = True
+
+if use_rfe or use_logreg:
     n_chans = n_chans
 else:
     n_chans = ['all']
+
+if use_rfe and use_logreg:
+    raise ValueError('ERROR: Cannot use RFE and logistic regression simultaneously')
 
 # use_rfe = True
 # rfe_method = 'LogisticRegression' # Options are 'SVC' or 'LogisticRegression'
@@ -155,20 +169,21 @@ subjects = {
     # # 'SEEG-SK-67': {'day1': ['GoNogo_py']}, # Not enough NoGo trials
     # 'SEEG-SK-68': {'day1': ['GoNogo_py']},
     # 'SEEG-SK-69': {'day1': ['GoNogo_py']}
-    'SEEG-SK-70': {'day1': ['GoNogo_py']}
+    'SEEG-SK-70': {'day1': ['GoNogo_py'],
+                   'day2': ['GoNogo_py']}
 }
 
 validation_data = {
-    'SEEG-SK-54': {'day4': ['GoNogo_py']},
-    'SEEG-SK-55': {'day3': ['GoNogo_py']},
-    'SEEG-SK-62': {'day2': ['GoNogo_py']},
-    'SEEG-SK-63': {'day2': ['GoNogo_py']},
-    'SEEG-SK-64': {'day2': ['GoNogo_py']},
-    'SEEG-SK-66': {'day2': ['GoNogo_py']},
-    # 'SEEG-SK-67': {'day2': ['GoNogo_py']},
-    'SEEG-SK-68': {'day2': ['GoNogo_py']},
-    'SEEG-SK-69': {'day2': ['GoNogo_py']},
-    'SEEG-SK-70': {'day2': ['GoNogo_py']}
+    # 'SEEG-SK-54': {'day4': ['GoNogo_py']},
+    # 'SEEG-SK-55': {'day3': ['GoNogo_py']},
+    # 'SEEG-SK-62': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-63': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-64': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-66': {'day2': ['GoNogo_py']},
+    # # 'SEEG-SK-67': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-68': {'day2': ['GoNogo_py']},
+    # 'SEEG-SK-69': {'day2': ['GoNogo_py']},
+    'SEEG-SK-70': {'day3': ['GoNogo_py']}
 }
 
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
@@ -225,6 +240,14 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
                 epoch_files.append(glob.glob(os.path.join(processed_dir, subj, day, task, f'*{montage}*.fif')))
         epoch_files = [item for sublist in epoch_files for item in sublist]
         epochs = mne.concatenate_epochs([mne.read_epochs(f) for f in epoch_files])
+        
+        # Obtain and drop bad channels
+        bad_channels_path = os.path.join(processed_dir, subj, f'{subj}_bad_channels.csv')
+        if os.path.exists(bad_channels_path):
+            bad_channels = pd.read_csv(bad_channels_path, header=None)
+            bad_channels.columns = ['bad_channels']
+            print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels["bad_channels"].values}')
+            epochs.drop_channels(bad_channels['bad_channels'].values)
         
         # # Decimate epochs
         # decim_factor = int(epochs.info['sfreq'] / target_sfreq)
@@ -585,12 +608,75 @@ for idx, subj in enumerate(subjects):
             events = [0 if event == interested_events[0] else 1 for event in events]
             events = np.array(events)
             
+            if args.use_logreg:
+                channel_performance = pd.DataFrame()
+                for ch in tqdm(subj_epochs.ch_names):
+                    
+                    ch_epochs = subj_epochs.copy().pick([ch])
+                    ch_epochs = ch_epochs.crop(interested_timeperiod[0], interested_timeperiod[1])
+                    ch_data = ch_epochs.get_data(copy=True)
+                    
+                    # Perform a sample PSD calculation to get the frequency bins
+                    psd, freqs = mne.time_frequency.psd_array_welch(ch_data[0], sfreq=target_sfreq, fmin=1, fmax=40, n_fft=ch_data.shape[2], n_overlap=int(ch_data.shape[2]/2), n_jobs=10, verbose=False)
+                    
+                    ch_psds = np.zeros((ch_data.shape[0], ch_data.shape[1], len(freqs)))
+                    ch_psds_df = pd.DataFrame()
+                    signal_length = ch_data.shape[2]
+                    
+                    for trialidx, trial in enumerate(ch_data):
+                        psd, freqs = mne.time_frequency.psd_array_welch(trial, sfreq=target_sfreq, fmin=1, fmax=40, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10, verbose=False)
+                        psd_normalized = 100 * (psd / simpson(psd, freqs)[:,None])
+                        ch_psds[trialidx, :, :] = psd_normalized
+                        
+                    ch_psds_df = pd.DataFrame(ch_psds.squeeze()).reset_index(drop=False)
+                    # Rename column to trial
+                    ch_psds_df.rename(columns={'index': 'trial'}, inplace=True)
+                    ch_psds_df['event'] = events
+                    ch_psds_df = ch_psds_df.melt(id_vars=['event', 'trial'], var_name='freq', value_name='psd')
+                    ch_psds_df['freq'] = ch_psds_df['freq'].apply(lambda x: freqs[int(x)])
+                    # Bin by frequency bands
+                    ch_psds_df['freq_band'] = ch_psds_df['freq'].apply(lambda x: [k for k, v in frequency_bands.items() if v[0] <= x <= v[1]][0])
+                    # ch_psds_df['event'] = ch_psds_df['event'].apply(lambda x: 1 if x == 'Nogo Incorrect' else 0)
+                    
+                    for freq_band in ch_psds_df['freq_band'].unique():
+                        ch_psds_df_freqband = ch_psds_df[ch_psds_df['freq_band'] == freq_band]
+                        # Aggregate
+                        ch_psds_df_freqband = ch_psds_df_freqband.groupby(['event', 'trial', 'freq_band']).mean().reset_index(drop=False)
+                        class_weights = {0: 1, 1: (1/np.mean(ch_psds_df_freqband['event']))}
+                        
+                        model = LogisticRegression(class_weight=class_weights)
+                        model.fit(ch_psds_df_freqband[['psd']], ch_psds_df_freqband['event'])
+                        predictions = model.predict(ch_psds_df_freqband[['psd']])
+                        
+                        accuracy = accuracy_score(ch_psds_df_freqband['event'], predictions)
+                        precision = precision_score(ch_psds_df_freqband['event'], predictions, zero_division=0)
+                        recall = recall_score(ch_psds_df_freqband['event'], predictions)
+                        f1 = f1_score(ch_psds_df_freqband['event'], predictions)
+                        auc = roc_auc_score(ch_psds_df_freqband['event'], predictions)
+                        auc_prc = average_precision_score(ch_psds_df_freqband['event'], predictions)
+                        
+                        ch_freqband_performance_df = pd.DataFrame({'channel': ch, 'freq_band': freq_band, 'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1': f1, 'auc': auc, 'auc_prc': auc_prc}, index=[0])
+                        channel_performance = pd.concat([channel_performance, ch_freqband_performance_df], axis=0)
+                
+                # Take the top N UNIQUE channels based on auc_prc
+                channel_performance = channel_performance.sort_values('auc_prc', ascending=False)
+                channel_performance = channel_performance.drop_duplicates(subset=['channel'], keep='first')
+                channel_performance.to_csv(os.path.join(subj_outdir, f'{subj}_channel_performance.csv'))
+                top_channels = channel_performance.head(n_ch)['channel'].values
+                top_channel_indices = np.unravel_index([subj_epochs.ch_names.index(ch) for ch in top_channels], subj_epochs.get_data(copy=True).shape[1])[0]
+                
+                training_data = psds_normalized[:, top_channel_indices, :]
+            else:
+                training_data = psds_normalized
+                
             #%% Feature selection
             if use_rfe:
                 if rfe_method == 'SVC':
                     estimator = SVC(kernel='linear')
                 elif rfe_method == 'LogisticRegression':
-                    estimator = LogisticRegression(max_iter=10000)
+                    if tp_class_weight == 'proportional':
+                        rfe_classweight = 1 #1 / np.mean(events)
+                    estimator = LogisticRegression(max_iter=10000, class_weight={0: 1, 1: rfe_classweight})
                 elif rfe_method == 'RandomForest':
                     estimator = RandomForestClassifier(random_state=42)
                 
@@ -609,7 +695,7 @@ for idx, subj in enumerate(subjects):
                 aal_regions = []
                 for ch in important_channels:
                     row = subj_labels.iloc[ch, :]
-                    coordinates = row['mni_x'], row['mni_y'], row['mni_z']
+                    coordinates = float(row['mni_x']), float(row['mni_y']), float(row['mni_z'])
                     if np.isnan(coordinates).any():
                         aal_regions.append('Unknown')
                         continue
@@ -685,7 +771,7 @@ for idx, subj in enumerate(subjects):
                     X_boost_test = np.squeeze(X_boost_test)
                     X_test = np.concatenate((X_test, X_boost_test), axis=0)
                     y_test = np.concatenate((y_test, y_boost_test), axis=0)
-                    day_train = np.concatenate((day_train, np.ones(X_boost_test.shape[0])))
+                    day_train = np.concatenate((day_train, np.ones(X_boost_train.shape[0])))
                     day_test = np.concatenate((day_test, np.ones(X_boost_test.shape[0])))
                     day_val = np.ones(X_val.shape[0])
                 else:
@@ -726,13 +812,15 @@ for idx, subj in enumerate(subjects):
             print('*'*50)
             print(f'\nPoint TensorBoard to:\n{run_logdir}')
             print('*'*50)
-            # Pause for a bit to allow the user to copy the logdir
-            time.sleep(10)
+            # # Pause for a bit to allow the user to copy the logdir
+            # time.sleep(10)
             reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, verbose=1, mode='min')
             model = EEGNet_PSD_custom(Chans=num_chans, Samples=num_samples)
             model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
             # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
-            fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: tp_class_weight})
+            if tp_class_weight == 'proportional':
+                ml_class_weights = {0: 1, 1: 1 / np.mean(y_train)}
+            fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight=ml_class_weights)
             
             plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
             plt.plot(fitted_model.history['val_accuracy'], color='orange', label='test')
@@ -771,6 +859,9 @@ for idx, subj in enumerate(subjects):
             # Find the threshold that maximizes the F1 score
             f1_scores = 2 * (precision * recall) / (precision + recall)
             optimal_threshold = thresholds[np.argmax(f1_scores)]
+            # Save out the optimal threshold
+            with open(os.path.join(subj_outdir, f'{subj}_optimal_threshold.txt'), 'w') as f:
+                f.write(str(optimal_threshold))
             fpr, tpr, _ = metrics.roc_curve(y_test, y_pred_probs)
             confusion_matrix = metrics.confusion_matrix(y_test, y_pred_probs > optimal_threshold)
             
