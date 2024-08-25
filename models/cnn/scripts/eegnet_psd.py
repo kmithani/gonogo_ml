@@ -858,6 +858,8 @@ for idx, subj in enumerate(subjects):
             # fitted_model = model.fit(X_train, y_train, epochs=100000, batch_size=16, validation_data=(X_test, y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight={0: 1., 1: 2.})
             if tp_class_weight == 'proportional':
                 ml_class_weights = {0: 1, 1: 1 / np.mean(y_train)}
+            else:
+                ml_class_weights = {0: 1, 1: tp_class_weight}
             fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight=ml_class_weights)
             
             plt.plot(fitted_model.history['accuracy'], color='blue', label='train')
