@@ -234,14 +234,13 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
     '''
     
     subjects_epochs = {}
-    # bad_channels = []
     
     for subj in subjects:
         epoch_files = []
         for day in subjects[subj]:
             for task in subjects[subj][day]:
                 epoch_files.append(glob.glob(os.path.join(processed_dir, subj, day, task, f'*{montage}*.fif')))
-                specific_bad_channels = pd.read_csv(os.path.join(processed_dir, subj, day, task, f'{subj}_bad_channels.csv'), header=None)
+                # specific_bad_channels = pd.read_csv(os.path.join(processed_dir, subj, day, task, f'{subj}_bad_channels.csv'), header=None)
                 # bad_channels.append(specific_bad_channels[0].values)
         epoch_files = [item for sublist in epoch_files for item in sublist]
         epochs = mne.concatenate_epochs([mne.read_epochs(f) for f in epoch_files])
@@ -255,10 +254,11 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
         # Obtain and drop bad channels
         bad_channels_path = os.path.join(processed_dir, subj, f'{subj}_bad_channels.csv')
         if os.path.exists(bad_channels_path):
-            bad_channels = pd.read_csv(bad_channels_path, header=None)
-            bad_channels.columns = ['bad_channels']
-            print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels["bad_channels"].values}')
-            epochs.drop_channels(bad_channels['bad_channels'].values)
+            bad_channels = pd.read_csv(bad_channels_path, header=None)[0].values
+            # bad_channels.append(specific_bad_channels[0].values)
+            # bad_channels.columns = ['bad_channels']
+            # print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels["bad_channels"].values}')
+            # epochs.drop_channels(bad_channels['bad_channels'].values)
         
         # # Decimate epochs
         # decim_factor = int(epochs.info['sfreq'] / target_sfreq)
@@ -541,9 +541,12 @@ for idx, subj in enumerate(subjects):
                     
             subj_dict = {subj: subjects[subj]} # Done this way to allow the data loader to work with a single subject
             subj_epochs, subj_bad_channels = gonogo_dataloader(subj_dict, target_sfreq)
+            # Drop bad channels
+            print(f'Dropping {len(subj_bad_channels)} bad channels:\n{subj_bad_channels}')
             subj_bad_channels_df = pd.DataFrame(subj_bad_channels, columns=['bad_channels'])
             subj_bad_channels_df.to_csv(os.path.join(subj_outdir, f'{subj}_bad_channels.csv'))
             subj_epochs = subj_epochs[subj][interested_events]
+            subj_epochs.drop_channels(subj_bad_channels)
             event_ids = subj_epochs.event_id
             
             # Load subject labels
