@@ -18,13 +18,14 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/archive/August222024/using_rfe/LogisticRegression'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression'
 hyperparameters_pre = { # Hyperparameters where the hyperparam directory occurs before the subject directory
     'n_chans': '_channels'
 }
 hyperparameters_post = { # Hyperparameters where the hyperparam directory occurs after the subject directory
     'tp_class_weight': 'tp_weight_'
 }
+sort_models_by = 'combined_auc_prc' # Options include: combined_auc, combined_auc_prc, roc_auc, val_roc_auc, auc_prc, val_auc_prc
 
 exclude_subjects = ['SEEG-SK-55', 'SEEG-SK-64', 'SEEG-SK-69']
 
@@ -66,39 +67,46 @@ for param in hyperparameters_pre:
                 
                 for hparam_post_dir in hparam_post_dirs:
                     
-                    if not os.path.exists(os.path.join(hparam_post_dir, subj, f'{subj}_predictions.csv')) or not os.path.exists(os.path.join(hparam_post_dir, subj, f'{subj}_validation_predictions.csv')):
+                    hparam_post_value = hparam_post_dir.split('/')[-1]
+                    
+                    if not os.path.exists(os.path.join(hparam_post_dir, f'{subj}_predictions.csv')) or not os.path.exists(os.path.join(hparam_post_dir, f'{subj}_validation_predictions.csv')):
                         print(f'{subj} missing predictions')
                         continue
                     if subj in exclude_subjects:
                         continue
-                    subj_predictions = pd.read_csv(os.path.join(param_dir, subj, f'{subj}_predictions.csv')).drop(columns=['Unnamed: 0'])
+                    subj_predictions = pd.read_csv(os.path.join(hparam_post_dir, f'{subj}_predictions.csv')).drop(columns=['Unnamed: 0'])
                     subj_predictions['subject'] = subj
                     subj_predictions['condition'] = 'holdout'
-                    subj_predictions_diffday = pd.read_csv(os.path.join(param_dir, subj, f'{subj}_validation_predictions.csv')).drop(columns=['Unnamed: 0'])
+                    subj_predictions_diffday = pd.read_csv(os.path.join(hparam_post_dir, f'{subj}_validation_predictions.csv')).drop(columns=['Unnamed: 0'])
                     subj_predictions_diffday['subject'] = subj
                     subj_predictions_diffday['condition'] = 'diffday'
                     subj_df = pd.concat([subj_predictions, subj_predictions_diffday])
-                    subj_df['hyperparameter'] = hparam
+                    subj_df['hyperparameter_1'] = hparam
+                    subj_df['hyperparameter_2'] = hparam_post_value
                     predictions_df = pd.concat([predictions_df, subj_df])   
                     
-                    if not os.path.exists(os.path.join(param_dir, subj, f'{subj}_model_metrics.csv')):
+                    if not os.path.exists(os.path.join(hparam_post_dir, f'{subj}_model_metrics.csv')):
                         subj_df_holdout = subj_df[subj_df['condition'] == 'holdout']
                         subj_df_diffday = subj_df[subj_df['condition'] == 'diffday']
                         subj_auc = metrics.roc_auc_score(subj_df_holdout['truth'], subj_df_holdout['0'])
                         subj_val_auc = metrics.roc_auc_score(subj_df_diffday['truth'], subj_df_diffday['0'])
+                        subj_auc_prc = metrics.average_precision_score(subj_df_holdout['truth'], subj_df_holdout['0'])
+                        subj_val_auc_prc = metrics.average_precision_score(subj_df_diffday['truth'], subj_df_diffday['0'])
                         # # Uncomment if needed:
                         # ## Make sure to also adjust the dataframe columns if uncommented
                         # subj_accuracy = metrics.accuracy_score(subj_df['truth'], subj_df['0'] > 0.5)
                         # subj_confmat = metrics.confusion_matrix(subj_df['truth'], subj_df['0'] > 0.5)
                         # subj_model_metrics = pd.DataFrame({'roc_auc': [subj_auc], 'accuracy': [subj_accuracy], 'confusion_matrix': [subj_confmat]})
-                        subj_model_metrics = pd.DataFrame({'roc_auc': [subj_auc], 'val_roc_auc': [subj_val_auc]})
+                        subj_model_metrics = pd.DataFrame({'roc_auc': [subj_auc], 'val_roc_auc': [subj_val_auc], 'auc_prc': [subj_auc_prc], 'val_auc_prc': [subj_val_auc_prc]})
                         subj_model_metrics['subject'] = subj
-                        subj_model_metrics['hyperparameter'] = hparam
+                        subj_model_metrics['hyperparameter_1'] = hparam
+                        subj_model_metrics['hyperparameter_2'] = hparam_post_value
                         model_metrics = pd.concat([model_metrics, subj_model_metrics])
                     else:
                         subj_model_metrics = pd.read_csv(os.path.join(param_dir, subj, f'{subj}_model_metrics.csv')).drop(columns=['Unnamed: 0'])
                         subj_model_metrics['subject'] = subj
-                        subj_model_metrics['hyperparameter'] = hparam
+                        subj_model_metrics['hyperparameter_1'] = hparam
+                        subj_model_metrics['hyperparameter_2'] = hparam_post_value
                         model_metrics = pd.concat([model_metrics, subj_model_metrics])
 
 using_rfe = 'using_rfe' in analysis_dir
@@ -108,8 +116,9 @@ if using_rfe:
     model_metrics['rfe_method'] = rfe_method
 
 model_metrics['combined_auc'] = model_metrics['roc_auc'] * model_metrics['val_roc_auc']
+model_metrics['combined_auc_prc'] = model_metrics['auc_prc'] * model_metrics['val_auc_prc']
 
-top_models = model_metrics.groupby('subject').apply(lambda x: x.sort_values('combined_auc', ascending=False).head(1)).reset_index(drop=True)
+top_models = model_metrics.groupby('subject').apply(lambda x: x.sort_values(sort_models_by, ascending=False).head(1)).reset_index(drop=True)
 
 top_models_dir = os.path.join(analysis_dir, 'top_models')
 if not os.path.exists(top_models_dir):
@@ -125,8 +134,9 @@ if '1' not in predictions_df.columns:
 
 top_model_predictions = pd.DataFrame()
 for subj in top_models['subject']:
-    top_hparam = top_models[top_models['subject'] == subj]['hyperparameter'].values[0]
-    subj_df_top = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['hyperparameter'] == top_hparam)]
+    top_hparam_1 = top_models[top_models['subject'] == subj]['hyperparameter_1'].values[0]
+    top_hparam_2 = top_models[top_models['subject'] == subj]['hyperparameter_2'].values[0]
+    subj_df_top = predictions_df[(predictions_df['subject'] == subj) & (predictions_df['hyperparameter_1'] == top_hparam_1) & (predictions_df['hyperparameter_2'] == top_hparam_2)]
     top_model_predictions = pd.concat([top_model_predictions, subj_df_top])
  
 top_model_predictions.to_csv(os.path.join(top_models_dir, 'top_model_predictions.csv'), index=False)
