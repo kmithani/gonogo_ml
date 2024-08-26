@@ -543,13 +543,13 @@ for idx, subj in enumerate(subjects):
         
         subj_higher_outdir = os.path.join(outdir, f'{n_ch}_channels', subj)
         
-        # if os.path.exists(os.path.join(subj_outdir, f'{subj}_completed.BAK')):
-        #     print(f'{subj} already processed. Skipping...')
-        #     continue
-        
         for tp_class_weight in tp_class_weights:
             subj_outdir = os.path.join(outdir, f'{n_ch}_channels', subj, f'tp_weight_{tp_class_weight}')
         
+            # if os.path.exists(os.path.join(subj_outdir, f'{subj}_completed.BAK')):
+            #     print(f'{subj} already processed. Skipping...')
+            #     continue
+            
             print(f'\nProcessing {subj}...')
             
             if not os.path.exists(subj_outdir):
@@ -708,7 +708,7 @@ for idx, subj in enumerate(subjects):
                             channel_performance = channel_performance.drop_duplicates(subset=['channel'], keep='first')
                             channel_performance.to_csv(os.path.join(subj_higher_outdir, f'{subj}_channel_performance.csv'))
                 else:
-                    channel_performance = pd.read_csv(os.path.join(subj_outdir, f'{subj}_channel_performance.csv'))
+                    channel_performance = pd.read_csv(os.path.join(subj_higher_outdir, f'{subj}_channel_performance.csv'))
                     
                 # Take the top N UNIQUE channels based on auc_prc
                 top_channels = channel_performance.head(n_ch)['channel'].values

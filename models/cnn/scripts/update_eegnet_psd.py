@@ -75,7 +75,7 @@ from collections import Counter
 
 data_dict = {'SEEG-SK-70': {'day7': ['GoNogo_py']}}
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
-model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_smote/using_rfe/LogisticRegression/20_channels/SEEG-SK-70/tp_weight_4'
+model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/20_channels/SEEG-SK-70/tp_weight_4'
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
 interested_timeperiod = (-0.8, 0)
 montage = 'bipolar'
@@ -219,7 +219,7 @@ if not os.path.exists(subj_outdir):
 else:
     print()
     print('*'*50)
-    print(f'WARNING: Updated model for {subj} already exists.')
+    print(f'WARNING: Updated model for {subj} may already exist.')
     print('*'*50)
 
 subj_epochs, bad_channels, day_vector = gonogo_dataloader(data_dict, target_sfreq=250)
@@ -229,6 +229,7 @@ subj_epochs.drop_channels(bad_channels)
 event_ids = subj_epochs.event_id
 
 #%% If important channels have been identified, use them
+repeat_channels = []
 if os.path.exists(os.path.join(model_dir, f'{subj}_top_channels_aal.csv')):
     top_channels = pd.read_csv(os.path.join(model_dir, f'{subj}_top_channels_aal.csv'))['channel'].values
     subj_epochs.pick_channels(top_channels)
@@ -359,4 +360,28 @@ confusion_matrix = metrics.confusion_matrix(y_test, y_pred > optimal_threshold)
 disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
 disp.plot(cmap='Blues')
 plt.savefig(os.path.join(subj_outdir, f'{subj}_updated_confmat.png'))
+plt.close()
+
+#%% Get updated model performance on all data
+y_pred = model.predict([X_all, day_all])
+precision, recall, thresholds = metrics.precision_recall_curve(y_all, y_pred)
+f1_scores = 2 * (precision * recall) / (precision + recall)
+# Replace NaNs with 0
+f1_scores = np.nan_to_num(f1_scores)
+optimal_threshold = thresholds[np.argmax(f1_scores)]
+with open(os.path.join(subj_outdir, f'{subj}_optimal_threshold_all.txt'), 'w') as f:
+    f.write(str(optimal_threshold))
+
+y_pred = model.predict([X_all, y_all])
+model_metrics_all = pd.DataFrame({'accuracy': accuracy_score(y_all, y_pred > optimal_threshold),
+                                'precision': precision_score(y_all, y_pred > optimal_threshold),
+                                'recall': recall_score(y_all, y_pred > optimal_threshold),
+                                'f1': f1_score(y_all, y_pred > optimal_threshold),
+                                'roc_auc': roc_auc_score(y_all, y_pred)}, index=[0])
+model_metrics_all.to_csv(os.path.join(subj_outdir, f'{subj}_model_metrics_all.csv'))
+
+confusion_matrix = metrics.confusion_matrix(y_all, y_pred > optimal_threshold)
+disp = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
+disp.plot(cmap='Blues')
+plt.savefig(os.path.join(subj_outdir, f'{subj}_updated_confmat_all.png'))
 plt.close()
