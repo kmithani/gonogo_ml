@@ -18,7 +18,7 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_smote/using_rfe/LogisticRegression/'
 hyperparameters_pre = { # Hyperparameters where the hyperparam directory occurs before the subject directory
     'n_chans': '_channels'
 }
@@ -197,11 +197,11 @@ plt.plot(mean_fpr, mean_tpr, color='darkred', label='Mean ROC curve')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
 plt.title('Holdout Set')
-t, p = ttest_1samp(model_metrics['roc_auc'], 0.5)
+t, p = ttest_1samp(top_models['roc_auc'], 0.5)
 if p < 0.05:
-    plt.text(0.95, 0.05, f'AUC = {model_metrics["roc_auc"].mean():.2f}* ± {model_metrics["roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+    plt.text(0.95, 0.05, f'AUC = {top_models["roc_auc"].mean():.2f}* ± {top_models["roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
 else:
-    plt.text(0.95, 0.05, f'AUC = {model_metrics["roc_auc"].mean():.2f} ± {model_metrics["roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+    plt.text(0.95, 0.05, f'AUC = {top_models["roc_auc"].mean():.2f} ± {top_models["roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
 sns.despine()
 plt.show()
 
@@ -276,11 +276,11 @@ plt.plot(mean_fpr, mean_tpr, color='darkred', label='Mean ROC curve')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
 plt.title('Different Day')
-t, p = ttest_1samp(model_metrics['val_roc_auc'], 0.5)
+t, p = ttest_1samp(top_models['val_roc_auc'], 0.5)
 if p < 0.05:
-    plt.text(0.95, 0.05, f'AUC = {model_metrics["val_roc_auc"].mean():.2f}* ± {model_metrics["val_roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+    plt.text(0.95, 0.05, f'AUC = {top_models["val_roc_auc"].mean():.2f}* ± {top_models["val_roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
 else:
-    plt.text(0.95, 0.05, f'AUC = {model_metrics["val_roc_auc"].mean():.2f} ± {model_metrics["val_roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
+    plt.text(0.95, 0.05, f'AUC = {top_models["val_roc_auc"].mean():.2f} ± {top_models["val_roc_auc"].std():.2f}', ha='right', va='bottom', transform=plt.gca().transAxes)
 sns.despine()
 plt.show()
 

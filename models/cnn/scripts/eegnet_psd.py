@@ -13,6 +13,7 @@ parser.add_argument('--rfe_method', type=str, choices=["SVC", "LogisticRegressio
 parser.add_argument('--online', action='store_true', help='Whether or not to use data from a different day to improve model performance')
 parser.add_argument('--fmax', type=int, help='The maximum frequency to use for the PSD estimates', nargs='?')
 parser.add_argument('--use_logreg', action='store_true', help='Use logistic regression for feature extraction (separate from RFE)')
+parser.add_argument('--use_smote', action='store_true', help='Use SMOTE to balance the classes')
 args = parser.parse_args()
 
 # # For debugging, assign the arguments manually
@@ -23,6 +24,7 @@ args = parser.parse_args()
 #         self.online = True
 #         self.fmax = 40
 #         self.use_logreg = False
+#         self.use_smote = False
 # args = Args()
 
 # General imports
@@ -64,6 +66,7 @@ from sklearn.feature_selection import RFE
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, auc, f1_score, confusion_matrix, ConfusionMatrixDisplay, average_precision_score
+from imblearn.over_sampling import SMOTE
 
 # Neuroimaging libraries
 import nibabel as nib
@@ -107,6 +110,16 @@ if args.online:
 else:
     outdir = os.path.join(outdir, 'offline')
     use_online = False
+    
+if args.use_smote:
+    print()
+    print('*'*50)
+    print('Using SMOTE to balance the classes')
+    print('*'*50)
+    outdir = os.path.join(outdir, 'using_smote')
+    use_smote = True
+else:
+    use_smote = False
 
 if args.use_rfe:
     print()
@@ -714,9 +727,9 @@ for idx, subj in enumerate(subjects):
                 if rfe_method == 'SVC':
                     estimator = SVC(kernel='linear')
                 elif rfe_method == 'LogisticRegression':
-                    if tp_class_weight == 'proportional':
-                        rfe_classweight = 1 #1 / np.mean(events)
-                    estimator = LogisticRegression(max_iter=10000, class_weight={0: 1, 1: rfe_classweight})
+                    # if tp_class_weight == 'proportional':
+                    #     rfe_classweight = 1 #1 / np.mean(events)
+                    estimator = LogisticRegression(max_iter=10000, class_weight={0: 1, 1: 1})
                 elif rfe_method == 'RandomForest':
                     estimator = RandomForestClassifier(random_state=42)
                 
@@ -763,6 +776,11 @@ for idx, subj in enumerate(subjects):
                 training_data = psds_normalized
             
             X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42, stratify=events)
+            if use_smote:
+                X_presmote = X_train.squeeze().reshape(X_train.shape[0], -1)
+                smote = SMOTE(sampling_strategy='minority', random_state=42)
+                X_smote, y_train = smote.fit_resample(X_presmote, y_train)
+                X_train = X_smote.reshape(X_smote.shape[0], X_train.shape[1], X_train.shape[2])
             X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], X_train.shape[2], 1)
             day_train = np.zeros(X_train.shape[0])
             day_test = np.zeros(X_test.shape[0])
