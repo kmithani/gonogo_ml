@@ -654,59 +654,63 @@ for idx, subj in enumerate(subjects):
             events = np.array(events)
             
             if args.use_logreg:
-                channel_performance = pd.DataFrame()
-                for ch in tqdm(subj_epochs.ch_names):
-                    
-                    ch_epochs = subj_epochs.copy().pick([ch])
-                    ch_epochs = ch_epochs.crop(interested_timeperiod[0], interested_timeperiod[1])
-                    ch_data = ch_epochs.get_data(copy=True)
-                    
-                    # Perform a sample PSD calculation to get the frequency bins
-                    psd, freqs = mne.time_frequency.psd_array_welch(ch_data[0], sfreq=target_sfreq, fmin=1, fmax=40, n_fft=ch_data.shape[2], n_overlap=int(ch_data.shape[2]/2), n_jobs=10, verbose=False)
-                    
-                    ch_psds = np.zeros((ch_data.shape[0], ch_data.shape[1], len(freqs)))
-                    ch_psds_df = pd.DataFrame()
-                    signal_length = ch_data.shape[2]
-                    
-                    for trialidx, trial in enumerate(ch_data):
-                        psd, freqs = mne.time_frequency.psd_array_welch(trial, sfreq=target_sfreq, fmin=1, fmax=40, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10, verbose=False)
-                        psd_normalized = 100 * (psd / simpson(psd, freqs)[:,None])
-                        ch_psds[trialidx, :, :] = psd_normalized
+                if not os.path.exists(os.path.join(subj_higher_outdir, f'{subj}_channel_performance.csv')):
+                    channel_performance = pd.DataFrame()
+                    print('Training logistic regression models...')
+                    for ch in tqdm(subj_epochs.ch_names):
                         
-                    ch_psds_df = pd.DataFrame(ch_psds.squeeze()).reset_index(drop=False)
-                    # Rename column to trial
-                    ch_psds_df.rename(columns={'index': 'trial'}, inplace=True)
-                    ch_psds_df['event'] = events
-                    ch_psds_df = ch_psds_df.melt(id_vars=['event', 'trial'], var_name='freq', value_name='psd')
-                    ch_psds_df['freq'] = ch_psds_df['freq'].apply(lambda x: freqs[int(x)])
-                    # Bin by frequency bands
-                    ch_psds_df['freq_band'] = ch_psds_df['freq'].apply(lambda x: [k for k, v in frequency_bands.items() if v[0] <= x <= v[1]][0])
-                    # ch_psds_df['event'] = ch_psds_df['event'].apply(lambda x: 1 if x == 'Nogo Incorrect' else 0)
+                        ch_epochs = subj_epochs.copy().pick([ch])
+                        ch_epochs = ch_epochs.crop(interested_timeperiod[0], interested_timeperiod[1])
+                        ch_data = ch_epochs.get_data(copy=True)
+                        
+                        # Perform a sample PSD calculation to get the frequency bins
+                        psd, freqs = mne.time_frequency.psd_array_welch(ch_data[0], sfreq=target_sfreq, fmin=1, fmax=40, n_fft=ch_data.shape[2], n_overlap=int(ch_data.shape[2]/2), n_jobs=10, verbose=False)
+                        
+                        ch_psds = np.zeros((ch_data.shape[0], ch_data.shape[1], len(freqs)))
+                        ch_psds_df = pd.DataFrame()
+                        signal_length = ch_data.shape[2]
+                        
+                        for trialidx, trial in enumerate(ch_data):
+                            psd, freqs = mne.time_frequency.psd_array_welch(trial, sfreq=target_sfreq, fmin=1, fmax=40, n_fft=signal_length, n_overlap=int(signal_length/2), n_jobs=10, verbose=False)
+                            psd_normalized = 100 * (psd / simpson(psd, freqs)[:,None])
+                            ch_psds[trialidx, :, :] = psd_normalized
+                            
+                        ch_psds_df = pd.DataFrame(ch_psds.squeeze()).reset_index(drop=False)
+                        # Rename column to trial
+                        ch_psds_df.rename(columns={'index': 'trial'}, inplace=True)
+                        ch_psds_df['event'] = events
+                        ch_psds_df = ch_psds_df.melt(id_vars=['event', 'trial'], var_name='freq', value_name='psd')
+                        ch_psds_df['freq'] = ch_psds_df['freq'].apply(lambda x: freqs[int(x)])
+                        # Bin by frequency bands
+                        ch_psds_df['freq_band'] = ch_psds_df['freq'].apply(lambda x: [k for k, v in frequency_bands.items() if v[0] <= x <= v[1]][0])
+                        # ch_psds_df['event'] = ch_psds_df['event'].apply(lambda x: 1 if x == 'Nogo Incorrect' else 0)
+                        
+                        for freq_band in ch_psds_df['freq_band'].unique():
+                            ch_psds_df_freqband = ch_psds_df[ch_psds_df['freq_band'] == freq_band]
+                            # Aggregate
+                            ch_psds_df_freqband = ch_psds_df_freqband.groupby(['event', 'trial', 'freq_band']).mean().reset_index(drop=False)
+                            class_weights = {0: 1, 1: (1/np.mean(ch_psds_df_freqband['event']))}
+                            
+                            model = LogisticRegression(class_weight=class_weights)
+                            model.fit(ch_psds_df_freqband[['psd']], ch_psds_df_freqband['event'])
+                            predictions = model.predict(ch_psds_df_freqband[['psd']])
+                            
+                            accuracy = accuracy_score(ch_psds_df_freqband['event'], predictions)
+                            precision = precision_score(ch_psds_df_freqband['event'], predictions, zero_division=0)
+                            recall = recall_score(ch_psds_df_freqband['event'], predictions)
+                            f1 = f1_score(ch_psds_df_freqband['event'], predictions)
+                            auc = roc_auc_score(ch_psds_df_freqband['event'], predictions)
+                            auc_prc = average_precision_score(ch_psds_df_freqband['event'], predictions)
+                            
+                            ch_freqband_performance_df = pd.DataFrame({'channel': ch, 'freq_band': freq_band, 'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1': f1, 'auc': auc, 'auc_prc': auc_prc}, index=[0])
+                            channel_performance = pd.concat([channel_performance, ch_freqband_performance_df], axis=0)
+                            channel_performance = channel_performance.sort_values('auc_prc', ascending=False)
+                            channel_performance = channel_performance.drop_duplicates(subset=['channel'], keep='first')
+                            channel_performance.to_csv(os.path.join(subj_higher_outdir, f'{subj}_channel_performance.csv'))
+                else:
+                    channel_performance = pd.read_csv(os.path.join(subj_outdir, f'{subj}_channel_performance.csv'))
                     
-                    for freq_band in ch_psds_df['freq_band'].unique():
-                        ch_psds_df_freqband = ch_psds_df[ch_psds_df['freq_band'] == freq_band]
-                        # Aggregate
-                        ch_psds_df_freqband = ch_psds_df_freqband.groupby(['event', 'trial', 'freq_band']).mean().reset_index(drop=False)
-                        class_weights = {0: 1, 1: (1/np.mean(ch_psds_df_freqband['event']))}
-                        
-                        model = LogisticRegression(class_weight=class_weights)
-                        model.fit(ch_psds_df_freqband[['psd']], ch_psds_df_freqband['event'])
-                        predictions = model.predict(ch_psds_df_freqband[['psd']])
-                        
-                        accuracy = accuracy_score(ch_psds_df_freqband['event'], predictions)
-                        precision = precision_score(ch_psds_df_freqband['event'], predictions, zero_division=0)
-                        recall = recall_score(ch_psds_df_freqband['event'], predictions)
-                        f1 = f1_score(ch_psds_df_freqband['event'], predictions)
-                        auc = roc_auc_score(ch_psds_df_freqband['event'], predictions)
-                        auc_prc = average_precision_score(ch_psds_df_freqband['event'], predictions)
-                        
-                        ch_freqband_performance_df = pd.DataFrame({'channel': ch, 'freq_band': freq_band, 'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1': f1, 'auc': auc, 'auc_prc': auc_prc}, index=[0])
-                        channel_performance = pd.concat([channel_performance, ch_freqband_performance_df], axis=0)
-                
                 # Take the top N UNIQUE channels based on auc_prc
-                channel_performance = channel_performance.sort_values('auc_prc', ascending=False)
-                channel_performance = channel_performance.drop_duplicates(subset=['channel'], keep='first')
-                channel_performance.to_csv(os.path.join(subj_outdir, f'{subj}_channel_performance.csv'))
                 top_channels = channel_performance.head(n_ch)['channel'].values
                 top_channel_indices = np.unravel_index([subj_epochs.ch_names.index(ch) for ch in top_channels], subj_epochs.get_data(copy=True).shape[1])[0]
                 
@@ -823,7 +827,7 @@ for idx, subj in enumerate(subjects):
                     psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
                 
                 if use_logreg:
-                    validation_data = psds_normalized_validation[:, top_channel_indices, :]
+                    psds_normalized_validation = psds_normalized_validation[:, top_channel_indices, :]
                 
                 if use_online:
                     X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42, stratify=events)
