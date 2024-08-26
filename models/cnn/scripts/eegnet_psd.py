@@ -247,6 +247,7 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
     '''
     
     subjects_epochs = {}
+    day_vector = []
     
     for subj in subjects:
         epoch_files = []
@@ -255,6 +256,8 @@ def gonogo_dataloader(subjects, target_sfreq, montage=montage, processed_dir=pro
                 epoch_files.append(glob.glob(os.path.join(processed_dir, subj, day, task, f'*{montage}*.fif')))
                 # specific_bad_channels = pd.read_csv(os.path.join(processed_dir, subj, day, task, f'{subj}_bad_channels.csv'), header=None)
                 # bad_channels.append(specific_bad_channels[0].values)
+                epoch_length = mne.read_epochs(epoch_files[0][0]).get_data().shape[2]
+                day_vector.append(np.repeat(day.strip('day'), epoch_length))
         epoch_files = [item for sublist in epoch_files for item in sublist]
         epochs = mne.concatenate_epochs([mne.read_epochs(f) for f in epoch_files])
         
@@ -819,6 +822,9 @@ for idx, subj in enumerate(subjects):
                 if use_rfe:
                     psds_normalized_validation = psds_normalized_validation[:, important_channels, :]
                 
+                if use_logreg:
+                    validation_data = psds_normalized_validation[:, top_channel_indices, :]
+                
                 if use_online:
                     X_val, X_boost, y_val, y_boost = train_test_split(psds_normalized_validation, events, test_size=0.5, random_state=42, stratify=events)
                     X_val = X_val.reshape(X_val.shape[0], X_val.shape[1], X_val.shape[2], 1)
@@ -919,6 +925,8 @@ for idx, subj in enumerate(subjects):
             precision, recall, thresholds = metrics.precision_recall_curve(y_test, y_pred_probs)
             # Find the threshold that maximizes the F1 score
             f1_scores = 2 * (precision * recall) / (precision + recall)
+            # Replace NaNs with 0
+            f1_scores[np.isnan(f1_scores)] = 0
             optimal_threshold = thresholds[np.argmax(f1_scores)]
             # Save out the optimal threshold
             with open(os.path.join(subj_outdir, f'{subj}_optimal_threshold.txt'), 'w') as f:

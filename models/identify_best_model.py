@@ -18,7 +18,7 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_smote/using_rfe/LogisticRegression/'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_smote/using_rfe/LogisticRegression'
 hyperparameters_pre = { # Hyperparameters where the hyperparam directory occurs before the subject directory
     'n_chans': '_channels'
 }
