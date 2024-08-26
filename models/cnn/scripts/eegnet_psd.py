@@ -17,15 +17,15 @@ parser.add_argument('--use_smote', action='store_true', help='Use SMOTE to balan
 args = parser.parse_args()
 
 # # For debugging, assign the arguments manually
-# class Args:
-#     def __init__(self):
-#         self.use_rfe = False
-#         self.rfe_method = 'LogisticRegression'
-#         self.online = True
-#         self.fmax = 40
-#         self.use_logreg = False
-#         self.use_smote = False
-# args = Args()
+class Args:
+    def __init__(self):
+        self.use_rfe = False
+        self.rfe_method = 'LogisticRegression'
+        self.online = True
+        self.fmax = 40
+        self.use_logreg = True
+        self.use_smote = False
+args = Args()
 
 # General imports
 import os
@@ -653,7 +653,7 @@ for idx, subj in enumerate(subjects):
             events = [0 if event == interested_events[0] else 1 for event in events]
             events = np.array(events)
             
-            if args.use_logreg:
+            if use_logreg:
                 if not os.path.exists(os.path.join(subj_higher_outdir, f'{subj}_channel_performance.csv')):
                     channel_performance = pd.DataFrame()
                     print('Training logistic regression models...')
@@ -725,9 +725,8 @@ for idx, subj in enumerate(subjects):
                 aal_df = pd.DataFrame({'channel': top_channels, 'aal_region': aal_regions})
                 aal_df.to_csv(os.path.join(subj_outdir, f'{subj}_top_channels_aal.csv'))
                 
+                print(f'Trimming to {n_ch} top channels...')
                 training_data = psds_normalized[:, top_channel_indices, :]
-            else:
-                training_data = psds_normalized
                 
             #%% Feature selection
             if use_rfe:
@@ -779,9 +778,10 @@ for idx, subj in enumerate(subjects):
                 
                 # training_data = rfe_data[:, important_indices]
                 training_data = psds_normalized[:, important_channels, :]
-            else:
+                
+            if not use_logreg and not use_rfe:
                 training_data = psds_normalized
-            
+                        
             X_train, X_test, y_train, y_test = train_test_split(training_data, events, test_size=0.2, random_state=42, stratify=events)
             if use_smote:
                 X_presmote = X_train.squeeze().reshape(X_train.shape[0], -1)
