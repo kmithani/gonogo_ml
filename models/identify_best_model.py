@@ -18,14 +18,14 @@ from scipy.stats import ttest_1samp
 from glob import glob
 
 # User-defined variables
-analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_logreg'
+analysis_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression'
 hyperparameters_pre = { # Hyperparameters where the hyperparam directory occurs before the subject directory
     'n_chans': '_channels'
 }
 hyperparameters_post = { # Hyperparameters where the hyperparam directory occurs after the subject directory
     'tp_class_weight': 'tp_weight_'
 }
-sort_models_by = 'combined_auc_prc' # Options include: combined_auc, combined_auc_prc, roc_auc, val_roc_auc, auc_prc, val_auc_prc
+sort_models_by = 'combined_auc_prc' # Options include: combined_auc, combined_auc_prc, roc_auc, val_roc_auc, auc_prc, val_auc_prc, val_f1
 
 exclude_subjects = ['SEEG-SK-55', 'SEEG-SK-64', 'SEEG-SK-69']
 
@@ -56,11 +56,13 @@ for param in hyperparameters_pre:
     for param_dir in param_dirs:
         hparam = param_dir.split('/')[-1]
         
+        if hparam == '25_channels': continue
+        
         subjects = [x.split('/')[-1] for x in glob(os.path.join(param_dir, 'SEEG-*'))]
 
         for subj in subjects:
             
-            if subj != 'SEEG-SK-70': continue # For debugging
+            if subj != 'SEEG-SK-74': continue # For debugging
             
             for hparam_post in hyperparameters_post:
                 hparam_post_dirs = [x for x in glob(os.path.join(param_dir, subj, hyperparameters_post[hparam_post] + '*')) if os.path.isdir(x)]
@@ -92,12 +94,13 @@ for param in hyperparameters_pre:
                         subj_val_auc = metrics.roc_auc_score(subj_df_diffday['truth'], subj_df_diffday['0'])
                         subj_auc_prc = metrics.average_precision_score(subj_df_holdout['truth'], subj_df_holdout['0'])
                         subj_val_auc_prc = metrics.average_precision_score(subj_df_diffday['truth'], subj_df_diffday['0'])
+                        subj_f1 = metrics.f1_score(subj_df_diffday['truth'], subj_df_diffday['0'] > 0.5)
                         # # Uncomment if needed:
                         # ## Make sure to also adjust the dataframe columns if uncommented
                         # subj_accuracy = metrics.accuracy_score(subj_df['truth'], subj_df['0'] > 0.5)
                         # subj_confmat = metrics.confusion_matrix(subj_df['truth'], subj_df['0'] > 0.5)
                         # subj_model_metrics = pd.DataFrame({'roc_auc': [subj_auc], 'accuracy': [subj_accuracy], 'confusion_matrix': [subj_confmat]})
-                        subj_model_metrics = pd.DataFrame({'roc_auc': [subj_auc], 'val_roc_auc': [subj_val_auc], 'auc_prc': [subj_auc_prc], 'val_auc_prc': [subj_val_auc_prc]})
+                        subj_model_metrics = pd.DataFrame({'roc_auc': [subj_auc], 'val_roc_auc': [subj_val_auc], 'auc_prc': [subj_auc_prc], 'val_auc_prc': [subj_val_auc_prc], 'val_f1': [subj_f1]})
                         subj_model_metrics['subject'] = subj
                         subj_model_metrics['hyperparameter_1'] = hparam
                         subj_model_metrics['hyperparameter_2'] = hparam_post_value
@@ -126,6 +129,10 @@ if not os.path.exists(top_models_dir):
 
 model_metrics.to_csv(os.path.join(top_models_dir, 'all_model_metrics.csv'), index=False)
 predictions_df.to_csv(os.path.join(top_models_dir, 'all_predictions.csv'), index=False)
+# Add path to model
+for rowidx, row in top_models.iterrows():
+    top_models.loc[rowidx, 'model_path'] = os.path.join(analysis_dir, row['hyperparameter_1'], row['subject'], row['hyperparameter_2'])
+
 top_models.to_csv(os.path.join(top_models_dir, 'top_models.csv'), index=False)
 
 if '1' not in predictions_df.columns:
