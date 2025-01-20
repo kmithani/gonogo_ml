@@ -73,9 +73,9 @@ from collections import Counter
 
 # User-defined variables
 
-data_dict = {'SEEG-SK-74': {'day3': ['GoNogo_py']}}
+data_dict = {'SEEG-SK-75': {'day3': ['GoNogo_py']}}
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
-model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/15_channels/SEEG-SK-74/tp_weight_proportional'
+model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/10_channels/SEEG-SK-75/tp_weight_proportional'
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
 interested_timeperiod = (-0.8, 0)
 montage = 'bipolar'
@@ -329,8 +329,13 @@ print(f'\nPoint TensorBoard to:\n{run_logdir}')
 print('*'*50)
 
 if 'tp_weight' in model_dir:
-    tp_weight = int(model_dir.split('tp_weight_')[-1])
-    ml_class_weights = {0: 1, 1: tp_weight}
+    tp_class_weight = model_dir.split('tp_weight_')[-1]
+    if tp_class_weight == 'proportional':
+        ml_class_weights = {0: 1, 1: 1 / np.mean(y_train)}
+    else:
+        ml_class_weights = {0: 1, 1: int(tp_class_weight)}
+    # tp_weight = int(model_dir.split('tp_weight_')[-1])
+    # ml_class_weights = {0: 1, 1: tp_weight}
 
 #%% Update model
 fitted_model = model.fit([X_train, day_train], y_train, epochs=100000, batch_size=16, validation_data=([X_test, day_test], y_test), callbacks=[early_stopping, model_checkpoint, tensorboard_cb], class_weight=ml_class_weights)

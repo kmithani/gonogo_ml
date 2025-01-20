@@ -191,7 +191,8 @@ subjects = {
     # 'SEEG-SK-72': {'day1': ['GoNogo_py'],
     #                'day2': ['GoNogo_py']},
     # 'SEEG-SK-73': {'day1': ['GoNogo_py']},
-    'SEEG-SK-74': {'day1': ['GoNogo_py']}
+    # 'SEEG-SK-74': {'day1': ['GoNogo_py']},
+    'SEEG-SK-75': {'day1': ['GoNogo_py']}
 }
 
 validation_data = {
@@ -207,7 +208,8 @@ validation_data = {
     # 'SEEG-SK-70': {'day3': ['GoNogo_py']},
     # 'SEEG-SK-71': {'day3': ['GoNogo_py']} # VERIFY
     # 'SEEG-SK-73': {'day2': ['GoNogo_py']},
-    'SEEG-SK-74': {'day2': ['GoNogo_py']}
+    # 'SEEG-SK-74': {'day2': ['GoNogo_py']},
+    'SEEG-SK-75': {'day2': ['GoNogo_py']}
 }
 
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
