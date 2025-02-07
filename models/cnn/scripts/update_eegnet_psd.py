@@ -73,9 +73,9 @@ from collections import Counter
 
 # User-defined variables
 
-data_dict = {'SEEG-SK-75': {'day3': ['GoNogo_py']}}
+data_dict = {'SEEG-SK-76': {'day3': ['GoNogo_py']}}
+model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/15_channels/SEEG-SK-76/tp_weight_6'
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
-model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/10_channels/SEEG-SK-75/tp_weight_proportional'
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
 interested_timeperiod = (-0.8, 0)
 montage = 'bipolar'

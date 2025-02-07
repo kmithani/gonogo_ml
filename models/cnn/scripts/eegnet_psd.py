@@ -16,14 +16,14 @@ parser.add_argument('--use_logreg', action='store_true', help='Use logistic regr
 parser.add_argument('--use_smote', action='store_true', help='Use SMOTE to balance the classes')
 args = parser.parse_args()
 
-# # For debugging, assign the arguments manually
+# For debugging, assign the arguments manually
 # class Args:
 #     def __init__(self):
-#         self.use_rfe = False
+#         self.use_rfe = True
 #         self.rfe_method = 'LogisticRegression'
 #         self.online = True
 #         self.fmax = 40
-#         self.use_logreg = True
+#         self.use_logreg = False
 #         self.use_smote = False
 # args = Args()
 
@@ -192,7 +192,8 @@ subjects = {
     #                'day2': ['GoNogo_py']},
     # 'SEEG-SK-73': {'day1': ['GoNogo_py']},
     # 'SEEG-SK-74': {'day1': ['GoNogo_py']},
-    'SEEG-SK-75': {'day1': ['GoNogo_py']}
+    # 'SEEG-SK-75': {'day1': ['GoNogo_py']},
+    'SEEG-SK-76': {'day1': ['GoNogo_py']}
 }
 
 validation_data = {
@@ -209,7 +210,8 @@ validation_data = {
     # 'SEEG-SK-71': {'day3': ['GoNogo_py']} # VERIFY
     # 'SEEG-SK-73': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-74': {'day2': ['GoNogo_py']},
-    'SEEG-SK-75': {'day2': ['GoNogo_py']}
+    # 'SEEG-SK-75': {'day2': ['GoNogo_py']},
+    'SEEG-SK-76': {'day2': ['GoNogo_py']}
 }
 
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
