@@ -350,14 +350,29 @@ for rowidx, row in top_models.iterrows():
     
     #%%
     
+    X_day_train = X_day_train.reshape(-1, 1)
+    X_day_val   = X_day_val.reshape(-1, 1)
+    
     X_shap = X_val
     # X_shap = X_val[np.where(y_val == 1), :, :, :].squeeze(axis=0)
     
     explainer = shap.GradientExplainer(model, [X_train, X_day_train])
+    # explainer = shap.GradientExplainer(model=model, data=X_train)
+    # masker_X = shap.maskers.Independent(X_train)
+    # masker_X_day = shap.maskers.Independent(X_day_train)
+    # masker = shap.maskers.Composite(masker_X, masker_X_day)
+    # explainer = shap.PermutationExplainer(model, masker=masker)
     
     # Convert to list
     # X_shap_list = [X_shap[i, :].squeeze() for i in range(X_shap.shape[0])]
-    shap_values = explainer.shap_values([X_shap[:,:,:,:], X_day_val[:]])
+    # shap_values = explainer.shap_values([X_shap[:,:,:,:], X_day_val[:]])
+    # Get model predictions
+    pred = model_predict([X_shap, X_day_val])
+    X_shap_pred = X_shap[np.where(pred > 0.05)[0], :, :, :]
+    X_day_val_pred = X_day_val[np.where(pred > 0.05)[0]]
+    # shap_values = explainer.shap_values([X_shap_pred, X_day_val_pred])
+    shap_values = explainer.shap_values((X_shap_pred, X_day_val_pred), npermutations=100)
+
     
     #%%
     shap_values = shap_values.squeeze()

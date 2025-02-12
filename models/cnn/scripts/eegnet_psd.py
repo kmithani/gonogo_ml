@@ -207,7 +207,7 @@ validation_data = {
     # 'SEEG-SK-68': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-69': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-70': {'day3': ['GoNogo_py']},
-    # 'SEEG-SK-71': {'day3': ['GoNogo_py']} # VERIFY
+    # 'SEEG-SK-71': {'day3': ['GoNogo_py']}, # VERIFY
     # 'SEEG-SK-73': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-74': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-75': {'day2': ['GoNogo_py']},
