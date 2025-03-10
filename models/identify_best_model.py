@@ -62,7 +62,7 @@ for param in hyperparameters_pre:
 
         for subj in subjects:
             
-            # if subj != 'SEEG-SK-76': continue # For debugging
+            if subj != 'SEEG-SK-78': continue # For debugging
             
             for hparam_post in hyperparameters_post:
                 hparam_post_dirs = [x for x in glob(os.path.join(param_dir, subj, hyperparameters_post[hparam_post] + '*')) if os.path.isdir(x)]

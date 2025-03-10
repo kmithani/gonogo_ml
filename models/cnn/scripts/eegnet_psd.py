@@ -16,7 +16,7 @@ parser.add_argument('--use_logreg', action='store_true', help='Use logistic regr
 parser.add_argument('--use_smote', action='store_true', help='Use SMOTE to balance the classes')
 args = parser.parse_args()
 
-# For debugging, assign the arguments manually
+# # For debugging, assign the arguments manually
 # class Args:
 #     def __init__(self):
 #         self.use_rfe = True
@@ -193,7 +193,9 @@ subjects = {
     # 'SEEG-SK-73': {'day1': ['GoNogo_py']},
     # 'SEEG-SK-74': {'day1': ['GoNogo_py']},
     # 'SEEG-SK-75': {'day1': ['GoNogo_py']},
-    'SEEG-SK-76': {'day1': ['GoNogo_py']}
+    # 'SEEG-SK-76': {'day1': ['GoNogo_py']},
+    'SEEG-SK-78': {'day1': ['GoNogo_py'],
+                   'day102': ['GoNogo_py']}
 }
 
 validation_data = {
@@ -211,7 +213,8 @@ validation_data = {
     # 'SEEG-SK-73': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-74': {'day2': ['GoNogo_py']},
     # 'SEEG-SK-75': {'day2': ['GoNogo_py']},
-    'SEEG-SK-76': {'day2': ['GoNogo_py']}
+    # 'SEEG-SK-76': {'day2': ['GoNogo_py']},
+    'SEE-SK-78': {'day2': ['GoNogo_py']}
 }
 
 interested_events = ['Nogo Correct', 'Nogo Incorrect']

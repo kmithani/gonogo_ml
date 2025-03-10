@@ -73,8 +73,8 @@ from collections import Counter
 
 # User-defined variables
 
-data_dict = {'SEEG-SK-76': {'day3': ['GoNogo_py']}}
-model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/15_channels/SEEG-SK-76/tp_weight_6'
+data_dict = {'SEEG-SK-78': {'day3': ['GoNogo_py']}}
+model_dir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/psd_40Hz/online/using_rfe/LogisticRegression/15_channels/SEEG-SK-78/tp_weight_6'
 processed_dir = '/d/gmi/1/karimmithani/seeg/processed'
 interested_events = ['Nogo Correct', 'Nogo Incorrect']
 interested_timeperiod = (-0.8, 0)
@@ -223,6 +223,9 @@ else:
     print('*'*50)
 
 subj_epochs, bad_channels, day_vector = gonogo_dataloader(data_dict, target_sfreq=250)
+if any("+AC0" in s for s in bad_channels):
+    print(f'WARNING: Bad channels contain non-ASCII characters. Removing them.')
+    bad_channels = [s.replace("+AC0", "") for s in bad_channels]
 print(f'Dropping {len(bad_channels)} bad channels:\n{bad_channels}')
 subj_epochs = subj_epochs[subj][interested_events]
 subj_epochs.drop_channels(bad_channels)
