@@ -27,7 +27,7 @@ hyperparameters_post = { # Hyperparameters where the hyperparam directory occurs
 }
 sort_models_by = 'val_auc_prc' # Options include: combined_auc, combined_auc_prc, roc_auc, val_roc_auc, auc_prc, val_auc_prc, val_f1
 
-exclude_subjects = ['SEEG-SK-55', 'SEEG-SK-64', 'SEEG-SK-69']
+exclude_subjects = ['SEEG-SK-55', 'SEEG-SK-64'] # SEEG-SK-69(?)
 
 # Miscellaneous
 plt.rcParams['font.family'] = 'FreeSans'
@@ -62,7 +62,7 @@ for param in hyperparameters_pre:
 
         for subj in subjects:
             
-            if subj != 'SEEG-SK-78': continue # For debugging
+            # if subj != 'SEEG-SK-78': continue # For debugging
             
             for hparam_post in hyperparameters_post:
                 hparam_post_dirs = [x for x in glob(os.path.join(param_dir, subj, hyperparameters_post[hparam_post] + '*')) if os.path.isdir(x)]

@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 import scipy
-from scipy.stats import ttest_1samp
+from scipy.stats import ttest_1samp, f_oneway, ttest_ind
 from pymer4.models import Lmer
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
@@ -29,6 +29,7 @@ from seegloc import fuzzyquery_aal
 
 import cv2
 import re
+import itertools
 
 # User-defined variables
 outdir = '/d/gmi/1/karimmithani/seeg/analysis/gonogo/models/cnn/analysis/gradcam'
@@ -531,9 +532,16 @@ for region in all_freqbands['aal_region'].unique():
     region_df = region_df[['subject', 'importance_diff_combined', 'aal_region', 'freq_band']].reset_index(drop=True)
     
     # One-way ANOVA
-    from scipy.stats import f_oneway
+    
     anova_p = f_oneway(region_df['importance_diff_combined'], region_df['freq_band'] == freqband)[1]
     if anova_p < 0.05:
+        pairs = list(itertools.combinations(region_df['freq_band'].unique(), 2))
+        for pair in pairs:
+            freqband1 = pair[0]
+            freqband2 = pair[1]
+            ttest_p = ttest_ind(region_df[region_df['freq_band'] == freqband1]['importance_diff_combined'], region_df[region_df['freq_band'] == freqband2]['importance_diff_combined'])[1]
+            if ttest_p < 0.05:
+                print(f'{region} {freqband1} vs {freqband2} {ttest_p}')
         # Identify the frequency band with the highest mean absolute importance difference
         freqband_diff = region_df[['freq_band', 'importance_diff_combined']].groupby('freq_band').mean().reset_index()
         highest_freqband = freqband_diff.iloc[np.argmax((freqband_diff['importance_diff_combined']))]['freq_band']
